@@ -162,5 +162,13 @@ char *get_cache_result(Dispatch_T dispatch, struct sockaddr_in serveraddr) {
         exit(EXIT_FAILURE);
     }
 
-    return NULL;
+    if (strcmp("NULL", buffer) == 0) {
+        return NULL;
+    }
+    else {
+        char *cache_data = (char *)malloc(n + 1);
+        memcpy(cache_data, buffer, n);
+        cache_data[n] = '\0';
+        return cache_data;
+    }
 }
