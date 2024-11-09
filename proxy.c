@@ -10,12 +10,13 @@
 #include <netdb.h>
 #include "fetch.h"
 
-char *perform_GET_request(HTTPS_REQ_T *req, struct sockaddr_in serveraddr);
+char *perform_GET_request(HTTPS_REQ_T *req);
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 3
 #define TIMEOUT_US 0
 #define BUFFER_SIZE 4096 // too small?
+#define CACHE_PORT = 9150
 
 int main(int argc, char **argv)
 {
@@ -123,7 +124,7 @@ int main(int argc, char **argv)
                     // Leaving the cache fetch out for now, since it requires
                     // python server with the real cache to be running
 
-                    response = perform_GET_request(req, serveraddr);
+                    response = perform_GET_request(req);
 
                     /* Else, fetch from the actual webpage */
                     // response = fetch(req);
@@ -148,8 +149,8 @@ int main(int argc, char **argv)
     return 0;
 }
 
-char *perform_GET_request(HTTPS_REQ_T *req, struct sockaddr_in serveraddr) {
-    socklen_t addr_len = sizeof(serveraddr);
+char *perform_GET_request(HTTPS_REQ_T *req) {
+    
     
     char *temp_buff = req->raw;
 
@@ -159,13 +160,13 @@ char *perform_GET_request(HTTPS_REQ_T *req, struct sockaddr_in serveraddr) {
         exit(EXIT_FAILURE);
     }
     printf("Sending message to server: %s\n", temp_buff);
-    if (sendto(sockfd, temp_buff, strlen(temp_buff), 0, (struct sockaddr*)&serveraddr, addr_len) < 0) {
+    if (sendto(sockfd, temp_buff, strlen(temp_buff), 0, (struct sockaddr*)&server_addr, addr_len) < 0) {
         perror("Send failed");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
     char buffer[BUFFER_SIZE];
-    int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&serveraddr, &addr_len);
+    int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&server_addr, &addr_len);
     if (n < 0) {
         perror("Receive failed");
         close(sockfd);
