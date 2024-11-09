@@ -27,7 +27,7 @@ SSL_CTX *create_context() {
     ctx = SSL_CTX_new(method);
     if (!ctx) {
         perror("Unable to create SSL context");
-        // ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
 
@@ -39,7 +39,7 @@ void configure_context(SSL_CTX *ctx) {
     SSL_CTX_set_verify_depth(ctx, 4);
 
     if (SSL_CTX_load_verify_locations(ctx, "path/to/ca-cert.pem", NULL) <= 0) {
-        // ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
 }
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
     SSL_set_fd(ssl, sock);
 
     if (SSL_connect(ssl) <= 0) {
-        // ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);
     } else {
         printf("Connected with %s encryption\n", SSL_get_cipher(ssl));
 
