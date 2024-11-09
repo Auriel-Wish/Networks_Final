@@ -3,109 +3,88 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-
-#include <openssl/conf.h>
+#include <netdb.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+#define HOSTNAME "google.com"
+#define PORT "443"
+#define REQUEST "GET / HTTP/1.1\r\nHost: " HOSTNAME "\r\nConnection: close\r\n\r\n"
 
-void initialize_openssl() {
-    SSL_load_error_strings();
-    OpenSSL_add_ssl_algorithms();
-}
+int main() {
+    SSL_library_init();                   // Initialize the OpenSSL library
+    SSL_load_error_strings();              // Load error strings for diagnostics
+    OpenSSL_add_ssl_algorithms();          // Load SSL algorithms
 
-void cleanup_openssl() {
-    EVP_cleanup();
-}
-
-SSL_CTX *create_context() {
-    const SSL_METHOD *method;
-    SSL_CTX *ctx;
-
-    method = SSLv23_client_method();
-
-    ctx = SSL_CTX_new(method);
-    if (!ctx) {
-        perror("Unable to create SSL context");
+    const SSL_METHOD *method = TLS_client_method();   // Set the TLS method to use
+    SSL_CTX *ctx = SSL_CTX_new(method);    // Create an SSL context
+    if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
+        return 1;
     }
 
-    return ctx;
-}
+    // Create a socket and connect to the host
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
 
-void configure_context(SSL_CTX *ctx) {
-    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
-    SSL_CTX_set_verify_depth(ctx, 4);
-
-    if (SSL_CTX_load_verify_locations(ctx, "path/to/ca-cert.pem", NULL) <= 0) {
-        ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
-    }
-}
-
-int main(int argc, char **argv) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <hostname> <port>\n", argv[0]);
-        exit(EXIT_FAILURE);
+    if (getaddrinfo(HOSTNAME, PORT, &hints, &res) != 0) {
+        perror("getaddrinfo");
+        SSL_CTX_free(ctx);
+        return 1;
     }
 
-    const char *hostname = argv[1];
-    const char *port = argv[2];
-
-    initialize_openssl();
-    SSL_CTX *ctx = create_context();
-    configure_context(ctx);
-
-    int sock;
-    struct sockaddr_in server_addr;
-
-    sock = socket(AF_INET, SOCK_STREAM, 0);
+    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (sock < 0) {
-        perror("Unable to create socket");
-        exit(EXIT_FAILURE);
+        perror("socket");
+        freeaddrinfo(res);
+        SSL_CTX_free(ctx);
+        return 1;
     }
 
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(atoi(port));
-    if (inet_pton(AF_INET, hostname, &server_addr.sin_addr) <= 0) {
-        perror("Invalid address/ Address not supported");
-        exit(EXIT_FAILURE);
+    if (connect(sock, res->ai_addr, res->ai_addrlen) != 0) {
+        perror("connect");
+        close(sock);
+        freeaddrinfo(res);
+        SSL_CTX_free(ctx);
+        return 1;
     }
+    freeaddrinfo(res);
 
-    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Connection failed");
-        exit(EXIT_FAILURE);
-    }
-
+    // Create an SSL object and attach it to the socket
     SSL *ssl = SSL_new(ctx);
     SSL_set_fd(ssl, sock);
-
-    if (SSL_connect(ssl) <= 0) {
+    if (SSL_connect(ssl) <= 0) {          // Perform the SSL/TLS handshake
         ERR_print_errors_fp(stderr);
-    } else {
-        printf("Connected with %s encryption\n", SSL_get_cipher(ssl));
-
-        const char *msg = "GET / HTTP/1.1\r\nHost: www.google.com\r\n\r\n";
-        SSL_write(ssl, msg, strlen(msg));
-
-        // Example of reading and writing data
-        char buffer[1024];
-        int bytes;
-
-        bytes = SSL_read(ssl, buffer, sizeof(buffer));
-        if (bytes > 0) {
-            buffer[bytes] = 0;
-            printf("Received: %s\n", buffer);
-        }
-
-        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        close(sock);
+        SSL_CTX_free(ctx);
+        return 1;
     }
 
+    // Send the HTTP GET request
+    if (SSL_write(ssl, REQUEST, strlen(REQUEST)) <= 0) {
+        ERR_print_errors_fp(stderr);
+        SSL_free(ssl);
+        close(sock);
+        SSL_CTX_free(ctx);
+        return 1;
+    }
+
+    // Receive and print the response
+    char buffer[4096];
+    int bytes;
+    while ((bytes = SSL_read(ssl, buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytes] = '\0';
+        printf("%s", buffer);
+    }
+
+    // Clean up
     SSL_free(ssl);
     close(sock);
     SSL_CTX_free(ctx);
-    cleanup_openssl();
+    EVP_cleanup();
 
     return 0;
 }
