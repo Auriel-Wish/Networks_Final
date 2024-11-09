@@ -9,7 +9,9 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-#define BUF_TTL 3
+#define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
+#define TIMEOUT_S 3
+#define TIMEOUT_US 0
 
 int main(int argc, char **argv)
 {
@@ -40,13 +42,13 @@ int main(int argc, char **argv)
     setsockopt(parentfd, SOL_SOCKET, SO_REUSEADDR,
                (const void *)&optval, sizeof(int));
 
-    // build the server's internet address
+    /* build the server's internet address */
     bzero((char *)&serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
     serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
     serveraddr.sin_port = htons((unsigned short)portno);
 
-    // bind the parent socket to the input portno
+    /* bind the parent socket to the input portno */
     if (bind(parentfd, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0)
         perror("Error on binding");
 
@@ -60,27 +62,11 @@ int main(int argc, char **argv)
 
     struct sockaddr_in clientaddr;
 
-    // Dispatch_T *dispatch = new_dispatch();
-
-    struct timeval timeout;
-    timeout.tv_sec = BUF_TTL;    //setting the default timeout
-    timeout.tv_usec = 0;
-
     while (true) {
-        /* Try to free any buffers older than the TTL
-         * If a buffer is freed, the client is removed from the list and their
-         * connection is closed */
-        // free_old_buffers(dispatch->table, &active_fd_set, dispatch->clients);
-
-        /* For the remaining buffered content, return the time until the next
-         * one will expire */
-        // timeout = get_next_timeout(dispatch->table);
-        printf("rerunning select in %ld seconds\n", timeout.tv_sec);
-
         read_fd_set = active_fd_set;
 
         /* SELECT will timeout when the next buffered message expires */
-        if (select (FD_SETSIZE, &read_fd_set, NULL, NULL, &timeout) < 0) {
+        if (select (FD_SETSIZE, &read_fd_set, NULL, NULL, &TIMEOUT) < 0) {
             perror("ERROR with select");
         }
 
@@ -117,14 +103,8 @@ int main(int argc, char **argv)
                     printf("Server established connection with %s (%s)\n\n",
                         hostp->h_name, hostaddrp);
 
-                    // Adding the new connection request to the set of active
-                    // sockets
+                    /* Adding new connection request to active socket set */
                     FD_SET(new_fd, &active_fd_set);
-
-                    /* The client socket has connected with the current socket, 
-                     * but the client has not identified itself yet. Therefore, 
-                     * as of right now, it's not in the list of active clients
-                     * even though it's in the set of FDs */
                 }
 
                 else {
@@ -142,8 +122,6 @@ int main(int argc, char **argv)
             }
         }
     }
-
-    // free_dispatch(&dispatch);
 
     return 0;
 }
