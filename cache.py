@@ -22,7 +22,7 @@ def cache_server(port):
     cache = {}
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind(('localhost', port))
+    server_socket.bind(('10.4.2.20', port))
 
     print(f"Server listening on port {port}")
 
@@ -56,14 +56,23 @@ def cache_server(port):
             print(f"Responding with cached response: {response}")
             server_socket.sendto(response, a2_address)
         else:
+            print("SENDING TOO SERVER")
             context = ssl.create_default_context()
+            print("0 here")
+            print(url)
             with socket.create_connection((url, 443)) as sock:
+                print("anothe here")
                 with context.wrap_socket(sock, server_hostname=url) as ssock:
+                    print("1")
                     ssock.sendall(request)
+                    print("2")
+
 
                     response = b""
                     while True:
+                        print("3")
                         data = ssock.recv(BUFFER_SIZE)
+                        print("4")
                         if not data:
                             break
                         response += data
@@ -72,6 +81,8 @@ def cache_server(port):
 
             response_line = response.split('\r\n')[0]
             _, status_code, _ = response_line.split()
+
+            print("5")
 
             if status_code == "200":
                 for key in list(cache):

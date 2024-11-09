@@ -16,7 +16,8 @@ char *perform_GET_request(HTTPS_REQ_T *req);
 #define TIMEOUT_S 3
 #define TIMEOUT_US 0
 #define BUFFER_SIZE 4096 // too small?
-#define CACHE_PORT = 9150
+
+#define CACHE_PORT 9150
 
 int main(int argc, char **argv)
 {
@@ -150,23 +151,48 @@ int main(int argc, char **argv)
 }
 
 char *perform_GET_request(HTTPS_REQ_T *req) {
-    
+    // (this is a client)
+    int sockfd, portno;
+    socklen_t serverlen;
+    struct sockaddr_in serveraddr;
+    struct hostent *server;
+    portno = CACHE_PORT;
+    char *hostname = "10.4.2.20";    
     
     char *temp_buff = req->raw;
 
-    int sockfd;
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation failed");
         exit(EXIT_FAILURE);
     }
+
+    /* gethostbyname: get the server's DNS entry */
+    server = gethostbyname(hostname);
+    if (server == NULL) {
+        fprintf(stderr,"ERROR, no such host as %s\n", hostname);
+        exit(0);
+    }
+
+    /* build the server's Internet address */
+    bzero((char *) &serveraddr, sizeof(serveraddr));
+    serveraddr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, 
+	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+    serveraddr.sin_port = htons(portno);
+
+    serverlen = sizeof(serveraddr);
+
     printf("Sending message to server: %s\n", temp_buff);
-    if (sendto(sockfd, temp_buff, strlen(temp_buff), 0, (struct sockaddr*)&server_addr, addr_len) < 0) {
+    if (sendto(sockfd, temp_buff, strlen(temp_buff), 0, (struct sockaddr*)&serveraddr, serverlen) < 0) {
         perror("Send failed");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
+
+    printf("Message has been send\n");
+
     char buffer[BUFFER_SIZE];
-    int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&server_addr, &addr_len);
+    int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&serveraddr, &serverlen);
     if (n < 0) {
         perror("Receive failed");
         close(sockfd);

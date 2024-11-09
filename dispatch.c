@@ -127,6 +127,9 @@ HTTPS_REQ_T* read_client_request(int fd)
      * own SSL certificate. For now, we will keep it simple by hardcoding the
      * HTTPS request in the buffer */
 
+    
+
+
     Buffer_T *incoming = read_get_request(fd);
     (void)incoming;
 
