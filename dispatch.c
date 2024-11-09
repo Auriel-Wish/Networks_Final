@@ -22,11 +22,6 @@ void free_dispatch(Dispatch_T **dispatch)
     *dispatch = NULL;
 }
 
-// int read_client_request(int fd, Dispatch_T *dispatch)
-// {
-//     return -1;
-// }
-
 HTTPS_REQ_T* read_client_request(int fd)
 {
     // need to read in the client request
@@ -37,7 +32,7 @@ HTTPS_REQ_T* read_client_request(int fd)
 
     // if client disconnects, return NULL
 
-    char *msg = "GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n";
+    char *msg = "GET / HTTP/1.1\r\nHost: {google.com}\r\nConnection: close\r\n\r\n";
     int len = strlen(msg);
 
     char *msg_h = calloc(sizeof(char), len);

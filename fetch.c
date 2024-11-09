@@ -8,11 +8,9 @@
 #include <openssl/err.h>
 #include "fetch.h"
 
-#define HOSTNAME "google.com"
-#define PORT "443"
-#define REQUEST "GET / HTTP/1.1\r\nHost: " HOSTNAME "\r\nConnection: close\r\n\r\n"
 
-int fetch() {
+char* fetch(char *hostname, char *port, char *request) {
+
     SSL_library_init();                   // Initialize the OpenSSL library
     SSL_load_error_strings();              // Load error strings for diagnostics
     OpenSSL_add_ssl_algorithms();          // Load SSL algorithms
@@ -21,7 +19,7 @@ int fetch() {
     SSL_CTX *ctx = SSL_CTX_new(method);    // Create an SSL context
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
-        return 1;
+        return NULL;
     }
 
     // Create a socket and connect to the host
@@ -30,10 +28,10 @@ int fetch() {
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    if (getaddrinfo(HOSTNAME, PORT, &hints, &res) != 0) {
+    if (getaddrinfo(hostname, port, &hints, &res) != 0) {
         perror("getaddrinfo");
         SSL_CTX_free(ctx);
-        return 1;
+        return NULL;
     }
 
     int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
@@ -41,7 +39,7 @@ int fetch() {
         perror("socket");
         freeaddrinfo(res);
         SSL_CTX_free(ctx);
-        return 1;
+        return NULL;
     }
 
     if (connect(sock, res->ai_addr, res->ai_addrlen) != 0) {
@@ -49,7 +47,7 @@ int fetch() {
         close(sock);
         freeaddrinfo(res);
         SSL_CTX_free(ctx);
-        return 1;
+        return NULL;
     }
     freeaddrinfo(res);
 
@@ -61,16 +59,16 @@ int fetch() {
         SSL_free(ssl);
         close(sock);
         SSL_CTX_free(ctx);
-        return 1;
+        return NULL;
     }
 
     // Send the HTTP GET request
-    if (SSL_write(ssl, REQUEST, strlen(REQUEST)) <= 0) {
+    if (SSL_write(ssl, request, strlen(request)) <= 0) {
         ERR_print_errors_fp(stderr);
         SSL_free(ssl);
         close(sock);
         SSL_CTX_free(ctx);
-        return 1;
+        return NULL;
     }
 
     // Receive and print the response
@@ -87,5 +85,6 @@ int fetch() {
     SSL_CTX_free(ctx);
     EVP_cleanup();
 
-    return 0;
+    // should return non-NULL here
+    return NULL;
 }

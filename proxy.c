@@ -126,8 +126,12 @@ int main(int argc, char **argv)
                         respond_to_client();
                     }
 
+                    char *hostname = "google.com";
+                    char *port = "443";
+                    char *request = "GET / HTTP/1.1\r\nHost: google.com\r\nConnection: close\r\n\r\n";
+
                     /* Else, fetch from the actual webpage */
-                    response = fetch();
+                    response = fetch(hostname, port, request);
 
                     /* then return the response to the client */
                     respond_to_client();
