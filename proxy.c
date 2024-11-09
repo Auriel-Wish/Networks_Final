@@ -11,7 +11,7 @@
 #include "dispatch.h"
 #include "fetch.h"
 
-char *get_cache_result(Dispatch_T dispatch, struct sockaddr_in serveraddr);
+char *get_cache_result(HTTPS_REQ_T *req, struct sockaddr_in serveraddr);
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 3
@@ -116,15 +116,26 @@ int main(int argc, char **argv)
 
                 else {
                     /* Incoming data from already-connected socket */
-                    int n = read_client_request(i, dispatch);
+                    HTTPS_REQ_T *req = read_client_request(i);
 
-                    
+                    char *response;
+                    response = get_cache_result(req, serveraddr);
+        
+                    /* If cache content is valid, serve it to the client */
+                    if (response != NULL) {
+                        respond_to_client();
+                    }
 
-                    fetch();
+                    /* Else, fetch from the actual webpage */
+                    response = fetch();
+
+                    /* then return the response to the client */
+                    respond_to_client();
 
                     /* Only close the socket if we reach EOF (the client
                      * closes the connection) */
-                    if (n < 0) {
+                    // if (n < 0) {
+                    if (req == NULL) {
                         close(i);
                         FD_CLR(i, &active_fd_set);
                     }
@@ -138,10 +149,10 @@ int main(int argc, char **argv)
     return 0;
 }
 
-char *get_cache_result(Dispatch_T dispatch, struct sockaddr_in serveraddr) {
+char *get_cache_result(HTTPS_REQ_T *req, struct sockaddr_in serveraddr) {
     socklen_t addr_len = sizeof(serveraddr);
     
-    char *temp_buff = "TEMP STRING";
+    char *temp_buff = req->buf;
 
     int sockfd;
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
