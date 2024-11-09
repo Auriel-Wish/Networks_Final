@@ -1,1 +1,3 @@
-char* fetch(char *hostname, char *port, char *request);
+#include "dispatch.h"
+
+char* fetch(HTTPS_REQ_T *req);

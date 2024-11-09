@@ -31,16 +31,19 @@ HTTPS_REQ_T* read_client_request(int fd)
      * HTTPS request in the buffer */
 
     // if client disconnects, return NULL
+    HTTPS_REQ_T *req = malloc(sizeof(HTTPS_REQ_T));
+    assert(req != NULL);
 
     char *msg = "GET / HTTP/1.1\r\nHost: {google.com}\r\nConnection: close\r\n\r\n";
-    int len = strlen(msg);
+    char *hostname = "google.com";
+    char *port = "443";
+    char *request = "GET / HTTP/1.1\r\nHost: google.com\r\nConnection: close\r\n\r\n";
 
-    char *msg_h = calloc(sizeof(char), len);
-    memcpy(msg_h, msg, len);
-
-    HTTPS_REQ_T *req = malloc(sizeof(HTTPS_REQ_T));
-    req->buf = msg_h;
-    req->size = len;
+    req->raw = strdup(msg);
+    req->size = strlen(msg);
+    req->hostname = strdup(hostname);
+    req->portno = strdup(port);
+    req->request = strdup(request);
 
     return req;
 }

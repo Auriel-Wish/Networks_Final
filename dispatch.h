@@ -5,8 +5,12 @@ typedef struct {
 } Dispatch_T;
 
 typedef struct {
-    char *buf;
+    char *raw;
     unsigned size;
+
+    char *hostname;
+    char *portno;
+    char *request;
 } HTTPS_REQ_T;
 
 Dispatch_T* new_dispatch();

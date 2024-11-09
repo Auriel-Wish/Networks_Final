@@ -8,7 +8,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include "dispatch.h"
 #include "fetch.h"
 
 char *get_cache_result(HTTPS_REQ_T *req, struct sockaddr_in serveraddr);
@@ -118,27 +117,28 @@ int main(int argc, char **argv)
                     /* Incoming data from already-connected socket */
                     HTTPS_REQ_T *req = read_client_request(i);
 
-                    char *response;
+                    char *response = NULL;
+                    (void)response;
+
+                    // Leaving the cache fetch out for now, since it requires
+                    // python server with the real cache to be running
+                    /*
                     response = get_cache_result(req, serveraddr);
-        
-                    /* If cache content is valid, serve it to the client */
+                    // If cache content is valid, serve it to the client
                     if (response != NULL) {
                         respond_to_client();
                     }
-
-                    char *hostname = "google.com";
-                    char *port = "443";
-                    char *request = "GET / HTTP/1.1\r\nHost: google.com\r\nConnection: close\r\n\r\n";
+                    */
 
                     /* Else, fetch from the actual webpage */
-                    response = fetch(hostname, port, request);
+                    response = fetch(req);
 
                     /* then return the response to the client */
                     respond_to_client();
 
-                    /* Only close the socket if we reach EOF (the client
-                     * closes the connection) */
-                    // if (n < 0) {
+                    /* Need to figure out the circumstances under which we close socket */
+                    /* Right now, it's after every request*/
+                    req = NULL;
                     if (req == NULL) {
                         close(i);
                         FD_CLR(i, &active_fd_set);
@@ -156,7 +156,7 @@ int main(int argc, char **argv)
 char *get_cache_result(HTTPS_REQ_T *req, struct sockaddr_in serveraddr) {
     socklen_t addr_len = sizeof(serveraddr);
     
-    char *temp_buff = req->buf;
+    char *temp_buff = req->raw;
 
     int sockfd;
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
@@ -180,6 +180,7 @@ char *get_cache_result(HTTPS_REQ_T *req, struct sockaddr_in serveraddr) {
     if (strcmp("NULL", buffer) == 0) {
         return NULL;
     }
+
     else {
         char *cache_data = (char *)malloc(n + 1);
         memcpy(cache_data, buffer, n);

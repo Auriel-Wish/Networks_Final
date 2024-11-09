@@ -9,7 +9,11 @@
 #include "fetch.h"
 
 
-char* fetch(char *hostname, char *port, char *request) {
+char* fetch(HTTPS_REQ_T *req) {
+
+    char *hostname = req->hostname;
+    char *port = req->portno;
+    char *request = req->request;
 
     SSL_library_init();                   // Initialize the OpenSSL library
     SSL_load_error_strings();              // Load error strings for diagnostics
