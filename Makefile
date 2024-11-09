@@ -3,7 +3,6 @@ src = $(wildcard *.c)
 obj = $(src:.c=.o)
 CC = gcc
 LDFLAGS = -lnsl -lssl -lcrypto
-# CHANGE
 
 #CFLAGS (not in their makefile)
 CFLAGS = -Wall

@@ -10,7 +10,7 @@
 #include <netdb.h>
 #include "fetch.h"
 
-char *get_cache_result(HTTPS_REQ_T *req, struct sockaddr_in serveraddr);
+char *perform_GET_request(HTTPS_REQ_T *req, struct sockaddr_in serveraddr);
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 3
@@ -122,19 +122,14 @@ int main(int argc, char **argv)
 
                     // Leaving the cache fetch out for now, since it requires
                     // python server with the real cache to be running
-                    /*
-                    response = get_cache_result(req, serveraddr);
-                    // If cache content is valid, serve it to the client
-                    if (response != NULL) {
-                        respond_to_client();
-                    }
-                    */
+
+                    response = perform_GET_request(req, serveraddr);
 
                     /* Else, fetch from the actual webpage */
-                    response = fetch(req);
+                    // response = fetch(req);
 
                     /* then return the response to the client */
-                    respond_to_client();
+                    // respond_to_client();
 
                     /* Need to figure out the circumstances under which we close socket */
                     /* Right now, it's after every request*/
@@ -153,7 +148,7 @@ int main(int argc, char **argv)
     return 0;
 }
 
-char *get_cache_result(HTTPS_REQ_T *req, struct sockaddr_in serveraddr) {
+char *perform_GET_request(HTTPS_REQ_T *req, struct sockaddr_in serveraddr) {
     socklen_t addr_len = sizeof(serveraddr);
     
     char *temp_buff = req->raw;
@@ -177,14 +172,8 @@ char *get_cache_result(HTTPS_REQ_T *req, struct sockaddr_in serveraddr) {
         exit(EXIT_FAILURE);
     }
 
-    if (strcmp("NULL", buffer) == 0) {
-        return NULL;
-    }
-
-    else {
-        char *cache_data = (char *)malloc(n + 1);
-        memcpy(cache_data, buffer, n);
-        cache_data[n] = '\0';
-        return cache_data;
-    }
+    char *cache_data = (char *)malloc(n + 1);
+    memcpy(cache_data, buffer, n);
+    cache_data[n] = '\0';
+    return cache_data;
 }
