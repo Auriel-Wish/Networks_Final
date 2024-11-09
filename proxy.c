@@ -8,6 +8,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include "dispatch.h"
+#include "fetch.h"
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 3
@@ -62,6 +64,8 @@ int main(int argc, char **argv)
 
     struct sockaddr_in clientaddr;
 
+    Dispatch_T *dispatch = new_dispatch();
+
     while (true) {
         read_fd_set = active_fd_set;
 
@@ -109,8 +113,9 @@ int main(int argc, char **argv)
 
                 else {
                     /* Incoming data from already-connected socket */
-                    // int n = read_message(i, dispatch);
-                    int n = 0;
+                    int n = read_client_request(i, dispatch);
+
+                    fetch();
 
                     /* Only close the socket if we reach EOF (the client
                      * closes the connection) */
@@ -122,6 +127,8 @@ int main(int argc, char **argv)
             }
         }
     }
+
+    free_dispatch(&dispatch);
 
     return 0;
 }
