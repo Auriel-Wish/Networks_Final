@@ -11,9 +11,12 @@
 #include "dispatch.h"
 #include "fetch.h"
 
+char *get_cache_result(Dispatch_T dispatch, struct sockaddr_in serveraddr);
+
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 3
 #define TIMEOUT_US 0
+#define BUFFER_SIZE 4096 // too small?
 
 int main(int argc, char **argv)
 {
@@ -115,6 +118,8 @@ int main(int argc, char **argv)
                     /* Incoming data from already-connected socket */
                     int n = read_client_request(i, dispatch);
 
+                    
+
                     fetch();
 
                     /* Only close the socket if we reach EOF (the client
@@ -131,4 +136,31 @@ int main(int argc, char **argv)
     free_dispatch(&dispatch);
 
     return 0;
+}
+
+char *get_cache_result(Dispatch_T dispatch, struct sockaddr_in serveraddr) {
+    socklen_t addr_len = sizeof(serveraddr);
+    
+    char *temp_buff = "TEMP STRING";
+
+    int sockfd;
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+    printf("Sending message to server: %s\n", temp_buff);
+    if (sendto(sockfd, temp_buff, strlen(temp_buff), 0, (struct sockaddr*)&serveraddr, addr_len) < 0) {
+        perror("Send failed");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+    char buffer[BUFFER_SIZE];
+    int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&serveraddr, &addr_len);
+    if (n < 0) {
+        perror("Receive failed");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+
+    return NULL;
 }
