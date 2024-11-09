@@ -30,6 +30,7 @@ def cache_server(port):
         # Receive the request from the client
         request, a2_address = server_socket.recvfrom(BUFFER_SIZE)
         print(f"Received request from {a2_address}: {request}")
+        print_cache(cache)
 
         request_line = request.decode().split('\r\n')[0]
         _, url, _ = request_line.split()
@@ -52,6 +53,7 @@ def cache_server(port):
         
         if response is not None:
             response = response.encode()
+            print(f"Responding with cached response: {response}")
             server_socket.sendto(response, a2_address)
         else:
             context = ssl.create_default_context()
@@ -83,9 +85,18 @@ def cache_server(port):
                     del cache[oldest_cache_key]
                 cache[cache_key] = cache_value
 
+            print(f"Responding with fresh response: {response}")
             server_socket.sendto(response.encode(), a2_address)
 
     server_socket.close()
+
+def print_cache(cache):
+    print("Cache:")
+    for key, value in cache.items():
+        print(f"Key: {key.url}, {key.client_address}")
+        print(f"Value: {value.text}")
+        print(f"Time saved: {value.time_saved}")
+        print()
 
 if __name__ == '__main__':
     cache_server(PORT)
