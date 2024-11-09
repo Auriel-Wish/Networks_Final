@@ -8,7 +8,6 @@
 #include <openssl/err.h>
 #include "fetch.h"
 
-
 char* fetch(HTTPS_REQ_T *req) {
 
     char *hostname = req->hostname;
