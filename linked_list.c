@@ -1,6 +1,8 @@
 #include "linked_list.h"
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
-Node* createNode(void *data) {
+Node *createNode(void *data) {
     Node* newNode = (Node*)malloc(sizeof(Node));
     if (newNode == NULL) {
         fprintf(stderr, "Memory allocation failed\n");
@@ -51,4 +53,14 @@ void freeList(Node *head) {
         head = head->next;
         free(temp);
     }
+}
+
+Node *get_ssl_context(Node *head, int filedes) {
+    for (Node *curr = head; curr = curr->next; curr != NULL) {
+        Context_T *curr_context = curr->data;
+        if (curr_context->filedes == filedes) {
+            return curr_context->ssl;
+        }
+    }
+    return NULL;
 }

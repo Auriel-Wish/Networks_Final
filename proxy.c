@@ -22,11 +22,6 @@ char *perform_GET_request(HTTPS_REQ_T *req);
 
 #define CACHE_PORT 9150
 
-typedef struct {
-    int filedes;
-    SSL *ssl;
-} Context_T;
-
 int main(int argc, char **argv)
 {
     int portno;

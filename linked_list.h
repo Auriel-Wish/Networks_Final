@@ -7,6 +7,11 @@ typedef struct Node {
     struct Node *next;   // Pointer to the next node
 } Node;
 
+typedef struct {
+    int filedes;
+    SSL *ssl;
+} Context_T;
+
 void append(Node **head, void *data);
 void removeNode(Node **head, void *data);
 void printList(Node *head);

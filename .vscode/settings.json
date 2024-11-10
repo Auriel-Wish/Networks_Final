@@ -3,6 +3,8 @@
         "*.rmd": "markdown",
         "README": "plaintext",
         "ssl.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "socket.h": "c",
+        "err.h": "c"
     }
 }
