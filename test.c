@@ -140,7 +140,7 @@ void handle_client_connection(int client_sock, SSL_CTX *ctx) {
     close(client_sock);
 }
 
-int main(int argc, char **argv) {
+int main_test(int argc, char **argv) {
     int sock;
     SSL_CTX *ctx;
 

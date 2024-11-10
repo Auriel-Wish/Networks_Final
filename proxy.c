@@ -8,7 +8,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include "fetch.h"
+#include "linked_list.h"
 
 char *perform_GET_request(HTTPS_REQ_T *req);
 
@@ -18,6 +21,11 @@ char *perform_GET_request(HTTPS_REQ_T *req);
 #define BUFFER_SIZE 4096 // too small?
 
 #define CACHE_PORT 9150
+
+typedef struct {
+    int filedes;
+    SSL *ssl;
+} Context_T;
 
 int main(int argc, char **argv)
 {
@@ -69,6 +77,7 @@ int main(int argc, char **argv)
     struct sockaddr_in clientaddr;
 
     Dispatch_T *dispatch = new_dispatch();
+    Node *ssl_contexts = NULL;
 
     while (true) {
         read_fd_set = active_fd_set;

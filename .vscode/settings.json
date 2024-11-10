@@ -2,6 +2,7 @@
     "files.associations": {
         "*.rmd": "markdown",
         "README": "plaintext",
-        "ssl.h": "c"
+        "ssl.h": "c",
+        "stdio.h": "c"
     }
 }
