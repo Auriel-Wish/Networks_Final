@@ -12,6 +12,8 @@
 #include <openssl/err.h>
 #include "dispatch.h"
 
+// making a small change
+
 char *perform_GET_request(HTTPS_REQ_T *req);
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
