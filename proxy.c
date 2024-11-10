@@ -36,7 +36,7 @@ int main(int argc, char **argv)
     }
 
     portno = atoi(argv[1]);
-    printf("Listening on port %d\n", portno);
+    printf("Proxy listening on port %d\n", portno);
 
     parentfd = socket(AF_INET, SOCK_STREAM, 0);
     if (parentfd < 0) {

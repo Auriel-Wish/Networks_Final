@@ -12,4 +12,4 @@ a.out: $(obj)
 
 .PHONY: clean
 clean:
-	rm -f $(obj) a.out
+	rm -f $(obj) a.out *.txt

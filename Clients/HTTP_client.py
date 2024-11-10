@@ -1,6 +1,6 @@
 import socket
 
-def send_request(host='10.4.2.20', port=9052):
+def send_request(host='10.4.2.20', port=9151):
     # Create a socket object
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 

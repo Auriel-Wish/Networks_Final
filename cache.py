@@ -1,17 +1,17 @@
 from utils import *
 
 class CacheKey:
-    def __init__(self, url, client_address):
-        self.url = url
+    def __init__(self, full_url, client_address):
+        self.full_url = full_url
         self.client_address = client_address
     
     def __eq__(self, other):
         if isinstance(other, CacheKey):
-            return self.url == other.url and self.client_address == other.client_address
+            return self.full_url == other.full_url and self.client_address == other.client_address
         return False
 
     def __hash__(self):
-        return hash((self.url, self.client_address))
+        return hash((self.full_url, self.client_address))
 
 class CacheValue:
     def __init__(self, text, time_saved):
@@ -24,26 +24,34 @@ def cache_server(port):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.bind(('10.4.2.20', port))
 
-    print(f"Server listening on port {port}")
+    print(f"Cache listening on port {port}")
 
     while True:
         # Receive the request from the client
         request, a2_address = server_socket.recvfrom(BUFFER_SIZE)
+        headers = request.decode().split('\r\n')[1:]
         print(f"Received request from {a2_address}: {request}")
         print_cache(cache)
 
         request_line = request.decode().split('\r\n')[0]
-        _, url, _ = request_line.split()
+        _, sub_url, _ = request_line.split()
+        host = None
+        for header in headers:
+            if header.startswith("Host:"):
+                host = header.split(":")[1].strip()
+            break
+
+        if host is not None:
+            full_url = f"{host}{sub_url}"
 
         response = None
-        headers = request.decode().split('\r\n')[1:]
         client_address = None
 
         for header in headers:
             if header.startswith("X-Original-Client-Address:"):
                 client_address = header.split(":")[1].strip()
                 break
-        cache_key = CacheKey(url, client_address)
+        cache_key = CacheKey(full_url, client_address)
         # Check if the URL is in the cache
         if cache_key in cache:
             if time.time() - cache[cache_key].time_saved > TIMEOUT:
@@ -52,27 +60,19 @@ def cache_server(port):
                 response = cache[cache_key].text
         
         if response is not None:
-            response = response.encode()
-            print(f"Responding with cached response: {response}")
-            server_socket.sendto(response, a2_address)
+            with open("in_cache.txt", "w") as f:
+                f.write(response)
+            print(f"Responding with cached response:\n{response}")
+            server_socket.sendto(response.encode(), a2_address)
         else:
-            print("SENDING TOO SERVER")
             context = ssl.create_default_context()
-            print("0 here")
-            print(url)
-            with socket.create_connection((url, 443)) as sock:
-                print("anothe here")
-                with context.wrap_socket(sock, server_hostname=url) as ssock:
-                    print("1")
+            with socket.create_connection((host, 443)) as sock:
+                with context.wrap_socket(sock, server_hostname=host) as ssock:
                     ssock.sendall(request)
-                    print("2")
-
 
                     response = b""
                     while True:
-                        print("3")
                         data = ssock.recv(BUFFER_SIZE)
-                        print("4")
                         if not data:
                             break
                         response += data
@@ -80,11 +80,7 @@ def cache_server(port):
             response = response.decode()
 
             response_line = response.split('\r\n')[0]
-            _, status_code, _ = response_line.split()
-
-            print("5")
-
-            if status_code == "200":
+            if "200" in response_line:
                 for key in list(cache):
                     if time.time() - cache[key].time_saved > TIMEOUT:
                         del cache[key]
@@ -96,18 +92,23 @@ def cache_server(port):
                     del cache[oldest_cache_key]
                 cache[cache_key] = cache_value
 
-            print(f"Responding with fresh response: {response}")
+            print(f"Responding with fresh response:\n{response}")
+            with open("not_in_cache.txt", "w") as f:
+                f.write(response)
             server_socket.sendto(response.encode(), a2_address)
 
     server_socket.close()
 
 def print_cache(cache):
-    print("Cache:")
+    print("\nCache:")
     for key, value in cache.items():
-        print(f"Key: {key.url}, {key.client_address}")
-        print(f"Value: {value.text}")
+        print("------------------------------")
+        print(f"Key:\n{key.full_url}, {key.client_address}")
+        print(f"Value:\n{value.text}")
         print(f"Time saved: {value.time_saved}")
+        print("------------------------------")
         print()
+    print()
 
 if __name__ == '__main__':
     cache_server(PORT)

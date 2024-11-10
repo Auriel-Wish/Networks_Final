@@ -140,10 +140,10 @@ HTTPS_REQ_T* read_client_request(int fd)
 
     /* The HTTPS request is currently hardcoded here. Once we successfully can
      * communicate with the client via HTTPS, we will change this */
-    char *msg = "GET / HTTP/1.1\r\nHost: {google.com}\r\nConnection: close\r\n\r\n";
+    char *msg = "GET / HTTP/1.1\r\nHost: www.example.com\r\nConnection: close\r\n\r\n";
     char *hostname = "google.com";
     char *port = "443";
-    char *request = "GET / HTTP/1.1\r\nHost: google.com\r\nConnection: close\r\n\r\n";
+    char *request = "GET / HTTP/1.1\r\nHost: www.example.com\r\nConnection: close\r\n\r\n";
 
     req->raw = strdup(msg);
     req->size = strlen(msg);
