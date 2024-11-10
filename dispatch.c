@@ -6,6 +6,8 @@
 #include <assert.h>
 #include <string.h>
 #include <stdbool.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #define BUFSIZE 1024
 
@@ -118,18 +120,104 @@ Buffer_T *read_get_request(int childfd)
     return buffer;
 }
 
+void handle_connect_request(int fd)
+{
+
+
+    char buffer[BUFSIZE];
+    int nbytes;
+
+    nbytes = read(fd, buffer, sizeof(buffer) - 1);
+    if (nbytes <= 0) {
+        //figure out a way to tell the proxy to close the socket with this client
+        assert(false);
+    }
+
+    buffer[nbytes] = '\0';
+
+    // check if the request is a connect request
+        // Step 2: Check if it’s a CONNECT request
+    if (strncmp(buffer, "CONNECT", 7) == 0) {
+        SSL_CTX *ctx;
+        initialize_openssl();
+        ctx = create_ssl_context();
+        configure_ssl_context(ctx);
+        
+        // do we need the client addr
+
+        SSL *ssl = SSL_new(ctx);
+        SSL_set_fd(ssl, fd);
+
+
+        // Step 3: Send a 200 Connection established response to the client
+        const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
+        write(fd, connect_response, strlen(connect_response));
+
+
+
+        // Step 4: Perform SSL handshake with the client after the CONNECT response
+        if (SSL_accept(ssl) <= 0) {
+            ERR_print_errors_fp(stderr);
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            close(fd);
+            return;
+        }
+
+        // SSL connection is now established with the client
+        // You can now read/write encrypted data with SSL_read and SSL_write
+        // Forward requests to the actual server as needed
+        printf("SSL connection established with client.\n");
+
+        // Example of reading data from the client and forwarding it could go here
+        while ((nbytes = SSL_read(ssl, buffer, sizeof(buffer) - 1)) > 0) {
+            buffer[nbytes] = '\0';
+            printf("Received encrypted data from client: %s\n", buffer);
+
+            // Forwarding logic to the destination server goes here
+            // For example, you could now set up an SSL connection to example.com, 
+            // forward `buffer` to the server, and relay the response back.
+        }
+    } else {
+        // If it’s not a CONNECT request, handle it differently or close the connection
+        const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
+        // TODO: need to handle this properly
+        assert(false);
+        // SSL_write(ssl, error_response, strlen(error_response));
+    }
+
+
+}
+
 
 HTTPS_REQ_T* read_client_request(int fd)
 {
-    // need to read in the client request
+    // CHECK if the fd is already associated with a SSL connection
+    // Auriel TODO
 
+    // if no, read HTTP CONNECT (should be a connect)
+        //setup SSL connection, adds to FD -> SSL mapping
+    // TODO: This needs to take in a pointer to Auriel's linked list
+    handle_connect_request(fd);
+    
+
+    // if yes, read HTTPS GET using SSL read (should be a GET)
+}
+
+void respond_to_client()
+{
+    printf("Responding to the client\n");
+}
+
+
+/* Old hardcoding 
     /* This step could be super difficult because we need to pretend to be our
      * own SSL certificate. For now, we will keep it simple by hardcoding the
      * HTTPS request in the buffer */
 
     
 
-
+/*
     Buffer_T *incoming = read_get_request(fd);
     (void)incoming;
 
@@ -138,8 +226,8 @@ HTTPS_REQ_T* read_client_request(int fd)
     HTTPS_REQ_T *req = malloc(sizeof(HTTPS_REQ_T));
     assert(req != NULL);
 
-    /* The HTTPS request is currently hardcoded here. Once we successfully can
-     * communicate with the client via HTTPS, we will change this */
+    //The HTTPS request is currently hardcoded here. Once we successfully can
+    //communicate with the client via HTTPS, we will change this
     char *hostname = "google.com";
     char *port = "443";
     char *request = "GET / HTTP/1.1\r\nHost: www.example.com\r\nConnection: close\r\n\r\n";
@@ -150,9 +238,4 @@ HTTPS_REQ_T* read_client_request(int fd)
     req->request = strdup(request);
 
     return req;
-}
-
-void respond_to_client()
-{
-    printf("Responding to the client\n");
-}
+*/

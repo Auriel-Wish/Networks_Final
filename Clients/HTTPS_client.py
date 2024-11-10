@@ -1,7 +1,8 @@
 import socket
 import ssl
+import sys
 
-def send_https_request(host='10.4.2.20', port=9052):
+def send_https_request(host='10.4.2.20', port=None):
     # Create a socket object
     raw_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
@@ -43,4 +44,5 @@ def send_https_request(host='10.4.2.20', port=9052):
         print("Connection closed")
 
 if __name__ == '__main__':
-    send_https_request()
+    port = int(sys.argv[1])
+    send_https_request(port=port)
