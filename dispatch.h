@@ -1,5 +1,7 @@
 #include "linked_list.h"
 
+#define BUFFER_SIZE 4096
+
 typedef struct {
     int placeholder;
     char *buffer;
@@ -11,7 +13,7 @@ typedef struct {
 
     char *hostname;
     char *portno;
-    char *request;
+    char *request_string;
 } HTTPS_REQ_T;
 
 Dispatch_T* new_dispatch();
