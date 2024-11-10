@@ -159,7 +159,7 @@ void configure_ssl_context(SSL_CTX *ctx) {
     }
 }
 
-void handle_connect_request(int fd, Node *front)
+void handle_connect_request(int fd, Node **front)
 {
     char buffer[BUFFER_SIZE];
     int nbytes;
@@ -189,12 +189,12 @@ void handle_connect_request(int fd, Node *front)
 
         Context_T *new_context = malloc(sizeof(Context_T));
         assert(new_context != NULL);
+        new_context->ssl = ssl;
+        new_context->filedes = fd;
 
         // Step 3: Send a 200 Connection established response to the client
         const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
         write(fd, connect_response, strlen(connect_response));
-
-
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(ssl) <= 0) {
@@ -205,7 +205,7 @@ void handle_connect_request(int fd, Node *front)
             return;
         }
 
-        append(&front, new_context);
+        append(front, new_context);
 
         // SSL connection is now established with the client
         // You can now read/write encrypted data with SSL_read and SSL_write
@@ -231,13 +231,13 @@ void handle_connect_request(int fd, Node *front)
 }
 
 
-HTTPS_REQ_T* read_client_request(int fd, Node *front)
+HTTPS_REQ_T* read_client_request(int fd, Node **front)
 {
     // CHECK if the fd is already associated with a SSL connection
     // Auriel TODO
     HTTPS_REQ_T *request = NULL;
 
-    SSL *curr_context = get_ssl_context(front, fd);
+    SSL *curr_context = get_ssl_context(*front, fd);
     if (curr_context != NULL) {
         // handle normal requests
         // TODO: buffer SSL read

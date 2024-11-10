@@ -20,6 +20,6 @@ Dispatch_T* new_dispatch();
 
 void free_dispatch(Dispatch_T **dispatch);
 
-HTTPS_REQ_T* read_client_request(int fd, Node *front);
+HTTPS_REQ_T* read_client_request(int fd, Node **front);
 
 void respond_to_client();

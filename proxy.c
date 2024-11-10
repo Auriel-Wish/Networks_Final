@@ -121,7 +121,7 @@ int main(int argc, char **argv)
                 else {
                     /* Incoming data from already-connected socket */
                     printf("\nreading client request\n");
-                    HTTPS_REQ_T *req = read_client_request(i, ssl_contexts);
+                    HTTPS_REQ_T *req = read_client_request(i, &ssl_contexts);
 
                     char *response = NULL;
                     (void)response;
