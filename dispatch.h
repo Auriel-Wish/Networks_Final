@@ -5,7 +5,6 @@ typedef struct {
 } Dispatch_T;
 
 typedef struct {
-    char *raw;
     unsigned size;
 
     char *hostname;

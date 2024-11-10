@@ -159,7 +159,7 @@ char *perform_GET_request(HTTPS_REQ_T *req) {
     portno = CACHE_PORT;
     char *hostname = "10.4.2.20";    
     
-    char *temp_buff = req->raw;
+    char *temp_buff = req->request;
 
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation failed");
