@@ -1,3 +1,5 @@
+#include "linked_list.h"
+
 typedef struct {
     int placeholder;
     char *buffer;
@@ -16,8 +18,6 @@ Dispatch_T* new_dispatch();
 
 void free_dispatch(Dispatch_T **dispatch);
 
-// int read_client_request(int fd, Dispatch_T *dispatch);
-
-HTTPS_REQ_T* read_client_request(int fd);
+HTTPS_REQ_T* read_client_request(int fd, Node *front);
 
 void respond_to_client();

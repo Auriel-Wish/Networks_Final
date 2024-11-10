@@ -8,7 +8,6 @@
 #include <stdbool.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include "linked_list.h"
 
 #define BUFSIZE 1024
 
@@ -190,6 +189,8 @@ void handle_connect_request(int fd, Node *front)
         SSL *ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);
 
+        Context_T *new_context = malloc(sizeof(Context_T));
+        assert(new_context != NULL);
 
         // Step 3: Send a 200 Connection established response to the client
         const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
@@ -205,6 +206,8 @@ void handle_connect_request(int fd, Node *front)
             close(fd);
             return;
         }
+
+        append(&front, new_context);
 
         // SSL connection is now established with the client
         // You can now read/write encrypted data with SSL_read and SSL_write
@@ -222,29 +225,32 @@ void handle_connect_request(int fd, Node *front)
         }
     } else {
         // If it’s not a CONNECT request, handle it differently or close the connection
-        const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
+        // const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
         // TODO: need to handle this properly
         assert(false);
         // SSL_write(ssl, error_response, strlen(error_response));
     }
-
-
 }
 
 
-HTTPS_REQ_T* read_client_request(int fd)
+HTTPS_REQ_T* read_client_request(int fd, Node *front)
 {
     // CHECK if the fd is already associated with a SSL connection
     // Auriel TODO
 
-    // if no, read HTTP CONNECT (should be a connect)
+    SSL *curr_context = get_ssl_context(front, fd);
+    if (curr_context != NULL) {
+        // handle normal requests
+    }
+    else {
+        // if no, read HTTP CONNECT (should be a connect)
         //setup SSL connection, adds to FD -> SSL mapping
-    // TODO: This needs to take in a pointer to Auriel's linked list
-    Node *hello;
-    handle_connect_request(fd, hello);
-    
+        // TODO: This needs to take in a pointer to Auriel's linked list
+        handle_connect_request(fd, front);
+    }
 
     // if yes, read HTTPS GET using SSL read (should be a GET)
+    return NULL;
 }
 
 void respond_to_client()

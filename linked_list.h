@@ -15,3 +15,4 @@ void append(Node **head, void *data);
 void removeNode(Node **head, void *data);
 void printList(Node *head);
 void freeList(Node *head);
+SSL *get_ssl_context(Node *head, int filedes);
