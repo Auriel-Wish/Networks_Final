@@ -12,8 +12,6 @@
 #include <openssl/err.h>
 #include "dispatch.h"
 
-// making a small change
-
 char *perform_GET_request(HTTPS_REQ_T *req);
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
@@ -122,6 +120,7 @@ int main(int argc, char **argv)
 
                 else {
                     /* Incoming data from already-connected socket */
+                    printf("\nreading client request\n");
                     HTTPS_REQ_T *req = read_client_request(i, ssl_contexts);
 
                     char *response = NULL;
@@ -130,7 +129,11 @@ int main(int argc, char **argv)
                     // Leaving the cache fetch out for now, since it requires
                     // python server with the real cache to be running
 
-                    response = perform_GET_request(req);
+                    // if it was a get request (and not a connect request)
+                    if (req != NULL) {
+                        // printf("HTTP REQUEST\n");
+                        response = perform_GET_request(req);
+                    }
 
                     /* Else, fetch from the actual webpage */
                     // response = fetch(req);
@@ -140,11 +143,7 @@ int main(int argc, char **argv)
 
                     /* Need to figure out the circumstances under which we close socket */
                     /* Right now, it's after every request*/
-                    req = NULL;
-                    if (req == NULL) {
-                        close(i);
-                        FD_CLR(i, &active_fd_set);
-                    }
+                    // FD_CLR(i, &active_fd_set);
                 }
             }
         }
@@ -164,7 +163,7 @@ char *perform_GET_request(HTTPS_REQ_T *req) {
     portno = CACHE_PORT;
     char *hostname = "10.4.2.20";    
     
-    char *temp_buff = req->request;
+    char *temp_buff = req->request_string;
 
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation failed");

@@ -9,8 +9,6 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#define BUFSIZE 1024
-
 typedef struct {
     char *buf;
     int size;
@@ -58,11 +56,11 @@ Buffer_T *read_get_request(int childfd)
 
     // NOTE: I'm going to allocate the buffer on the heap here.
     // Using calloc to initialize every slot to 0
-    char *buf = calloc(BUFSIZE, sizeof(char));
-    unsigned long capacity = BUFSIZE;
-    unsigned long old_capacity = BUFSIZE;
+    char *buf = calloc(BUFFER_SIZE, sizeof(char));
+    unsigned long capacity = BUFFER_SIZE;
+    unsigned long old_capacity = BUFFER_SIZE;
 
-    // GET requests must be less than BUFSIZE right now
+    // GET requests must be less than BUFFER_SIZE right now
     while (true)
     {
         if (i == capacity - 1) {
@@ -163,7 +161,7 @@ void configure_ssl_context(SSL_CTX *ctx) {
 
 void handle_connect_request(int fd, Node *front)
 {
-    char buffer[BUFSIZE];
+    char buffer[BUFFER_SIZE];
     int nbytes;
 
     nbytes = read(fd, buffer, sizeof(buffer) - 1);
@@ -214,15 +212,15 @@ void handle_connect_request(int fd, Node *front)
         // Forward requests to the actual server as needed
         printf("SSL connection established with client.\n");
 
-        // Example of reading data from the client and forwarding it could go here
-        while ((nbytes = SSL_read(ssl, buffer, sizeof(buffer) - 1)) > 0) {
-            buffer[nbytes] = '\0';
-            printf("Received encrypted data from client: %s\n", buffer);
+        // // Example of reading data from the client and forwarding it could go here
+        // while ((nbytes = SSL_read(ssl, buffer, sizeof(buffer) - 1)) > 0) {
+        //     buffer[nbytes] = '\0';
+        //     printf("Received encrypted data from client: %s\n", buffer);
 
-            // Forwarding logic to the destination server goes here
-            // For example, you could now set up an SSL connection to example.com, 
-            // forward `buffer` to the server, and relay the response back.
-        }
+        //     // Forwarding logic to the destination server goes here
+        //     // For example, you could now set up an SSL connection to example.com, 
+        //     // forward `buffer` to the server, and relay the response back.
+        // }
     } else {
         // If it’s not a CONNECT request, handle it differently or close the connection
         // const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
@@ -237,10 +235,30 @@ HTTPS_REQ_T* read_client_request(int fd, Node *front)
 {
     // CHECK if the fd is already associated with a SSL connection
     // Auriel TODO
+    HTTPS_REQ_T *request = NULL;
 
     SSL *curr_context = get_ssl_context(front, fd);
     if (curr_context != NULL) {
         // handle normal requests
+        // TODO: buffer SSL read
+        char buffer[BUFFER_SIZE];
+        int n;
+        n = SSL_read(curr_context, buffer, sizeof(buffer) - 1);
+        buffer[n] = '\0';
+
+        request = malloc(sizeof(HTTPS_REQ_T));
+        assert(request != NULL);
+
+        //The HTTPS request is currently hardcoded here. Once we successfully can
+        //communicate with the client via HTTPS, we will change this
+        char *hostname = "google.com";
+        char *port = "443";
+        char *request_string = "GET / HTTP/1.1\r\nHost: www.example.com\r\nConnection: close\r\n\r\n";
+
+        request->size = strlen(request_string);
+        request->hostname = strdup(hostname);
+        request->portno = strdup(port);
+        request->request_string = strdup(request_string);
     }
     else {
         // if no, read HTTP CONNECT (should be a connect)
@@ -250,7 +268,7 @@ HTTPS_REQ_T* read_client_request(int fd, Node *front)
     }
 
     // if yes, read HTTPS GET using SSL read (should be a GET)
-    return NULL;
+    return request;
 }
 
 void respond_to_client()
