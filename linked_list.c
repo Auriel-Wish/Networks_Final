@@ -1,5 +1,7 @@
 #include "linked_list.h"
-#include <openssl/ssl.h>
+#include <stdio.h>
+#include <stdlib.h>
+// #include <openssl/ssl.h>
 #include <openssl/err.h>
 
 Node *createNode(void *data) {

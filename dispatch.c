@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include "linked_list.h"
 
 #define BUFSIZE 1024
 
@@ -120,10 +121,49 @@ Buffer_T *read_get_request(int childfd)
     return buffer;
 }
 
-void handle_connect_request(int fd)
+void initialize_openssl() {
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
+}
+
+SSL_CTX *create_ssl_context() {
+    const SSL_METHOD *method = TLS_server_method(); // Use the TLS server method
+    SSL_CTX *ctx = SSL_CTX_new(method);
+    if (!ctx) {
+        perror("Unable to create SSL context");
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+    return ctx;
+}
+
+void configure_ssl_context(SSL_CTX *ctx) {
+    // Load the root CA certificate (ca.crt)
+    if (SSL_CTX_load_verify_locations(ctx, "ca.crt", NULL) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    // Load the domain certificate (domain.crt) and private key (domain.key)
+    if (SSL_CTX_use_certificate_file(ctx, "example.com.crt", SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, "example.com.key", SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    // Verify that the private key matches the certificate
+    if (!SSL_CTX_check_private_key(ctx)) {
+        fprintf(stderr, "Private key does not match the public certificate\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void handle_connect_request(int fd, Node *front)
 {
-
-
     char buffer[BUFSIZE];
     int nbytes;
 
@@ -134,6 +174,8 @@ void handle_connect_request(int fd)
     }
 
     buffer[nbytes] = '\0';
+
+    printf("Buffer content is:\n\n%s\n\n", buffer);
 
     // check if the request is a connect request
         // Step 2: Check if it’s a CONNECT request
@@ -198,7 +240,8 @@ HTTPS_REQ_T* read_client_request(int fd)
     // if no, read HTTP CONNECT (should be a connect)
         //setup SSL connection, adds to FD -> SSL mapping
     // TODO: This needs to take in a pointer to Auriel's linked list
-    handle_connect_request(fd);
+    Node *hello;
+    handle_connect_request(fd, hello);
     
 
     // if yes, read HTTPS GET using SSL read (should be a GET)
@@ -211,13 +254,10 @@ void respond_to_client()
 
 
 /* Old hardcoding 
-    /* This step could be super difficult because we need to pretend to be our
-     * own SSL certificate. For now, we will keep it simple by hardcoding the
-     * HTTPS request in the buffer */
+    This step could be super difficult because we need to pretend to be our
+    own SSL certificate. For now, we will keep it simple by hardcoding the
+    HTTPS request in the buffer    
 
-    
-
-/*
     Buffer_T *incoming = read_get_request(fd);
     (void)incoming;
 

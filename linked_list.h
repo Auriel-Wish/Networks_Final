@@ -1,5 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <openssl/ssl.h>
 
 // Define the structure for a single node in the list
 typedef struct Node {
