@@ -19,6 +19,7 @@ python cache.py &
 sleep 0.5
 ./a.out 9151 &
 sleep 0.5
-python Clients/HTTP_client.py
-sleep 0.5
-python Clients/HTTP_client.py
+wait
+# python Clients/HTTP_client.py
+# sleep 0.5
+# python Clients/HTTP_client.py

@@ -10,8 +10,7 @@
 #include <netdb.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include "fetch.h"
-#include "linked_list.h"
+#include "dispatch.h"
 
 char *perform_GET_request(HTTPS_REQ_T *req);
 
@@ -121,7 +120,7 @@ int main(int argc, char **argv)
 
                 else {
                     /* Incoming data from already-connected socket */
-                    HTTPS_REQ_T *req = read_client_request(i);
+                    HTTPS_REQ_T *req = read_client_request(i, ssl_contexts);
 
                     char *response = NULL;
                     (void)response;
