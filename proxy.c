@@ -19,7 +19,7 @@ char *perform_GET_request(HTTPS_REQ_T *req);
 #define TIMEOUT_US 0
 #define BUFFER_SIZE 4096 // too small?
 
-#define CACHE_PORT 9150
+#define CACHE_PORT 1025
 
 int main(int argc, char **argv)
 {
@@ -160,7 +160,7 @@ char *perform_GET_request(HTTPS_REQ_T *req) {
     struct sockaddr_in serveraddr;
     struct hostent *server;
     portno = CACHE_PORT;
-    char *cache_hostname = "10.4.2.20";    
+    char *cache_hostname = "localhost";    
     
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation failed");

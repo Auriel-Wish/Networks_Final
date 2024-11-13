@@ -1,13 +1,12 @@
 HTTP/1.1 200 OK
-Accept-Ranges: bytes
-Age: 502635
+Age: 479824
 Cache-Control: max-age=604800
 Content-Type: text/html; charset=UTF-8
-Date: Wed, 13 Nov 2024 01:26:52 GMT
-Etag: "3147526947+gzip"
-Expires: Wed, 20 Nov 2024 01:26:52 GMT
+Date: Wed, 13 Nov 2024 01:36:18 GMT
+Etag: "3147526947+gzip+ident"
+Expires: Wed, 20 Nov 2024 01:36:18 GMT
 Last-Modified: Thu, 17 Oct 2019 07:18:26 GMT
-Server: ECAcc (bsb/27B5)
+Server: ECAcc (bsb/2794)
 Vary: Accept-Encoding
 X-Cache: HIT
 Content-Length: 1256

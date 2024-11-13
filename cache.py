@@ -23,7 +23,7 @@ def cache_server(port):
     cache = {}
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind(('10.4.2.20', port))
+    server_socket.bind(('localhost', port))
 
     print(f"Cache listening on port {port}")
 
