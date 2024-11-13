@@ -11,6 +11,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include "dispatch.h"
+#include <time.h>
 
 char *perform_GET_request(HTTPS_REQ_T *req);
 
@@ -129,16 +130,22 @@ int main(int argc, char **argv)
                     // Leaving the cache fetch out for now, since it requires
                     // python server with the real cache to be running
 
+                    volatile int request_complete = 0;
                     // if it was a get request (and not a connect request)
                     if (req != NULL) {
                         response = perform_GET_request(req);
+                        request_complete = 1;
+
+                        printf("\n\nI'm done here\n\n");
+                        respond_to_client(i, response, BUFFER_SIZE);
+
                     }
 
                     /* Else, fetch from the actual webpage */
                     // response = fetch(req);
-
                     /* then return the response to the client */
-                    // respond_to_client();
+                    // while (!request_complete) { sleep(0); }  // spin wait
+                    // respond_to_client(i, response, BUFFER_SIZE);
 
                     /* Need to figure out the circumstances under which we close socket */
                     /* Right now, it's after every request*/
@@ -153,15 +160,15 @@ int main(int argc, char **argv)
     return 0;
 }
 
+
 char *perform_GET_request(HTTPS_REQ_T *req) {
-    // (this is a client)
     int sockfd, portno;
     socklen_t serverlen;
     struct sockaddr_in serveraddr;
     struct hostent *server;
     portno = CACHE_PORT;
     char *cache_hostname = "localhost";    
-    
+
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation failed");
         exit(EXIT_FAILURE);
@@ -171,6 +178,7 @@ char *perform_GET_request(HTTPS_REQ_T *req) {
     server = gethostbyname(cache_hostname);
     if (server == NULL) {
         fprintf(stderr,"ERROR, no such host as %s\n", cache_hostname);
+        close(sockfd);
         exit(0);
     }
 
@@ -178,20 +186,30 @@ char *perform_GET_request(HTTPS_REQ_T *req) {
     bzero((char *) &serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
     bcopy((char *)server->h_addr, 
-	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+          (char *)&serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
-
     serverlen = sizeof(serveraddr);
 
+    // Allocate request data buffer and copy data
     char *req_data = (char *)malloc(req->size_of_request + sizeof(req->portno));
-    memcpy(req_data, &(req->portno), sizeof(req->portno));
-    memcpy(req_data + sizeof(req->portno), (req->request_string), req->size_of_request);
-    if (sendto(sockfd, req_data, req->size_of_request + sizeof(req->portno), 0, (struct sockaddr*)&serveraddr, serverlen) < 0) {
-        perror("Send failed");
+    if (!req_data) {
+        perror("Memory allocation failed");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
+    memcpy(req_data, &(req->portno), sizeof(req->portno));
+    memcpy(req_data + sizeof(req->portno), req->request_string, req->size_of_request);
 
+    // Send the request
+    if (sendto(sockfd, req_data, req->size_of_request + sizeof(req->portno), 0, (struct sockaddr*)&serveraddr, serverlen) < 0) {
+        perror("Send failed");
+        free(req_data);
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+    free(req_data);  // Free req_data after sending
+
+    // Receive the response
     char buffer[BUFFER_SIZE];
     int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&serveraddr, &serverlen);
     if (n < 0) {
@@ -200,8 +218,70 @@ char *perform_GET_request(HTTPS_REQ_T *req) {
         exit(EXIT_FAILURE);
     }
 
+    // Allocate memory for the response
     char *cache_data = (char *)malloc(n + 1);
+    if (!cache_data) {
+        perror("Memory allocation failed");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
     memcpy(cache_data, buffer, n);
-    cache_data[n] = '\0';
-    return cache_data;
+    cache_data[n] = '\0';  // Null-terminate the response
+
+    close(sockfd);  // Close the socket before returning
+    return cache_data;  // Return the response
 }
+
+
+// char *perform_GET_request(HTTPS_REQ_T *req) {
+//     // (this is a client)
+//     int sockfd, portno;
+//     socklen_t serverlen;
+//     struct sockaddr_in serveraddr;
+//     struct hostent *server;
+//     portno = CACHE_PORT;
+//     char *cache_hostname = "localhost";    
+    
+//     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+//         perror("Socket creation failed");
+//         exit(EXIT_FAILURE);
+//     }
+
+//     /* gethostbyname: get the server's DNS entry */
+//     server = gethostbyname(cache_hostname);
+//     if (server == NULL) {
+//         fprintf(stderr,"ERROR, no such host as %s\n", cache_hostname);
+//         exit(0);
+//     }
+
+//     /* build the server's Internet address */
+//     bzero((char *) &serveraddr, sizeof(serveraddr));
+//     serveraddr.sin_family = AF_INET;
+//     bcopy((char *)server->h_addr, 
+// 	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+//     serveraddr.sin_port = htons(portno);
+
+//     serverlen = sizeof(serveraddr);
+
+//     char *req_data = (char *)malloc(req->size_of_request + sizeof(req->portno));
+//     memcpy(req_data, &(req->portno), sizeof(req->portno));
+//     memcpy(req_data + sizeof(req->portno), (req->request_string), req->size_of_request);
+//     if (sendto(sockfd, req_data, req->size_of_request + sizeof(req->portno), 0, (struct sockaddr*)&serveraddr, serverlen) < 0) {
+//         perror("Send failed");
+//         close(sockfd);
+//         exit(EXIT_FAILURE);
+//     }
+
+//     char buffer[BUFFER_SIZE];
+//     int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&serveraddr, &serverlen);
+//     if (n < 0) {
+//         perror("Receive failed");
+//         close(sockfd);
+//         exit(EXIT_FAILURE);
+//     }
+
+//     char *cache_data = (char *)malloc(n + 1);
+//     memcpy(cache_data, buffer, n);
+//     cache_data[n] = '\0';
+//     return cache_data;
+// }

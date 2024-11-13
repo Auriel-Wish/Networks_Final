@@ -21,4 +21,4 @@ void free_dispatch(Dispatch_T **dispatch);
 
 HTTPS_REQ_T* read_client_request(int fd, Node **front);
 
-void respond_to_client();
+void respond_to_client(int fd, char *msg, int msg_size);

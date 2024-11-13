@@ -249,7 +249,17 @@ HTTPS_REQ_T* read_client_request(int fd, Node **front)
     HTTPS_REQ_T *request = NULL;
 
     Context_T *curr_context = get_ssl_context(*front, fd);
-    if (curr_context != NULL) {
+
+    if (curr_context == NULL) {
+        // if no, read HTTP CONNECT (should be a connect)
+        //setup SSL connection, adds to FD -> SSL mapping
+        // TODO: This needs to take in a pointer to Auriel's linked list
+        handle_connect_request(fd, front);
+    }
+
+
+    else {
+        // if yes, read HTTPS GET using SSL read (should be a GET)
         // handle normal requests
         // TODO: buffer SSL read
         char buffer[BUFFER_SIZE];
@@ -266,21 +276,21 @@ HTTPS_REQ_T* read_client_request(int fd, Node **front)
         request->portno = curr_context->port;
         request->size_of_request = n;
     }
-    else {
-        // if no, read HTTP CONNECT (should be a connect)
-        //setup SSL connection, adds to FD -> SSL mapping
-        // TODO: This needs to take in a pointer to Auriel's linked list
 
-        handle_connect_request(fd, front);
-    }
 
-    // if yes, read HTTPS GET using SSL read (should be a GET)
     return request;
 }
 
-void respond_to_client()
+void respond_to_client(int fd, char *msg, int msg_size)
 {
-    printf("Responding to the client\n");
+    printf("About to send to the message\n");
+    int n = write(fd, msg, msg_size);
+    // // printf("Responding to the client\n");
+    if (n < 0) {
+        error("Something bad happened");
+    }
+    printf("Done sending the message\n");
+
 }
 
 
