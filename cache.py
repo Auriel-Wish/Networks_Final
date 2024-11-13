@@ -29,11 +29,19 @@ def cache_server(port):
     while True:
         # Receive the request from the client
         request, a2_address = server_socket.recvfrom(BUFFER_SIZE)
-        headers = request.decode().split('\r\n')[1:]
-        print(f"Received request from {a2_address}: {request}")
-        print_cache(cache)
+        print(f"Received request from {a2_address}")
+        # print_cache(cache)
 
-        request_line = request.decode().split('\r\n')[0]
+        port_number = int.from_bytes(request[:4], byteorder='little')
+        http_request = request[4:]
+
+        # print(f"\nPort number: {port_number}")
+        # print(f"\nRequest:\n{http_request}")
+
+        # Extract the HTTP request from the rest of the bytes
+
+        headers = http_request.decode().split('\r\n')[1:]
+        request_line = http_request.decode().split('\r\n')[0]
         _, sub_url, _ = request_line.split()
         host = None
         for header in headers:
@@ -66,16 +74,31 @@ def cache_server(port):
             server_socket.sendto(response.encode(), a2_address)
         else:
             context = ssl.create_default_context()
-            with socket.create_connection((host, 443)) as sock:
+            print(f"Making a fresh request to {host}")
+            with socket.create_connection((host, port_number)) as sock:
                 with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    ssock.sendall(request)
+                    print(f"Sending request to {host} on port {port_number}")
+                    print(f"Request:\n{http_request}")
+                    ssock.sendall(http_request)
 
                     response = b""
+                    content_length = -1
+                    header_length = -1
                     while True:
                         data = ssock.recv(BUFFER_SIZE)
-                        if not data:
+                        if data:
+                            response += data
+                            if len(response) >= header_length + content_length and content_length != -1 and header_length != -1:
+                                break
+                        else:
                             break
-                        response += data
+                        if content_length == -1:
+                            headers = response.split(b'\r\n\r\n')[0]
+                            header_length = len(headers + b'\r\n\r\n')
+                            for header in headers.split(b'\r\n'):
+                                if header.startswith(b'Content-Length:'):
+                                    content_length = int(header.split(b':')[1].strip())
+                                    break
 
             response = response.decode()
 

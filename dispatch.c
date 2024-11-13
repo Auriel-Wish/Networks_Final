@@ -177,6 +177,13 @@ void handle_connect_request(int fd, Node **front)
     // check if the request is a connect request
         // Step 2: Check if it’s a CONNECT request
     if (strncmp(buffer, "CONNECT", 7) == 0) {
+        // *host = strtok(buffer + 8, ":");
+        // *host = malloc(strlen(buffer + 8) + 1);
+        // strcpy(*host, buffer + 8);
+
+        // char *port_str = strtok(NULL, " ");
+        // *port = atoi(port_str);
+        
         SSL_CTX *ctx;
         initialize_openssl();
         ctx = create_ssl_context();
@@ -191,6 +198,10 @@ void handle_connect_request(int fd, Node **front)
         assert(new_context != NULL);
         new_context->ssl = ssl;
         new_context->filedes = fd;
+        char *hostname = strtok(buffer + 8, ":");
+        new_context->hostname = malloc(strlen(hostname) + 1);
+        strcpy(new_context->hostname, hostname);
+        new_context->port = atoi(strtok(NULL, " "));
 
         // Step 3: Send a 200 Connection established response to the client
         const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
@@ -237,33 +248,29 @@ HTTPS_REQ_T* read_client_request(int fd, Node **front)
     // Auriel TODO
     HTTPS_REQ_T *request = NULL;
 
-    SSL *curr_context = get_ssl_context(*front, fd);
+    Context_T *curr_context = get_ssl_context(*front, fd);
     if (curr_context != NULL) {
         // handle normal requests
         // TODO: buffer SSL read
         char buffer[BUFFER_SIZE];
         int n;
-        n = SSL_read(curr_context, buffer, sizeof(buffer) - 1);
+        n = SSL_read(curr_context->ssl, buffer, sizeof(buffer) - 1);
         buffer[n] = '\0';
 
+        // I think we only actually need the request string - we already
+        // have the hostname and port number
         request = malloc(sizeof(HTTPS_REQ_T));
         assert(request != NULL);
-
-        //The HTTPS request is currently hardcoded here. Once we successfully can
-        //communicate with the client via HTTPS, we will change this
-        char *hostname = "google.com";
-        char *port = "443";
-        char *request_string = "GET / HTTP/1.1\r\nHost: www.example.com\r\nConnection: close\r\n\r\n";
-
-        request->size = strlen(request_string);
-        request->hostname = strdup(hostname);
-        request->portno = strdup(port);
-        request->request_string = strdup(request_string);
+        request->request_string = strdup(buffer);
+        request->hostname = strdup(curr_context->hostname);
+        request->portno = curr_context->port;
+        request->size_of_request = n;
     }
     else {
         // if no, read HTTP CONNECT (should be a connect)
         //setup SSL connection, adds to FD -> SSL mapping
         // TODO: This needs to take in a pointer to Auriel's linked list
+
         handle_connect_request(fd, front);
     }
 

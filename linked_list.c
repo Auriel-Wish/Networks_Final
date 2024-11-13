@@ -57,11 +57,11 @@ void freeList(Node *head) {
     }
 }
 
-SSL *get_ssl_context(Node *head, int filedes) {
+Context_T *get_ssl_context(Node *head, int filedes) {
     for (Node *curr = head; curr != NULL; curr = curr->next) {
         Context_T *curr_context = curr->data;
         if (curr_context->filedes == filedes) {
-            return curr_context->ssl;
+            return curr_context;
         }
     }
     return NULL;
