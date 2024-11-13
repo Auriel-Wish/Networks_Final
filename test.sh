@@ -15,7 +15,7 @@ trap cleanup EXIT
 
 make clean > /dev/null
 make > /dev/null
-python cache.py &
+python3 cache.py &
 sleep 0.5
 ./a.out 1026 &
 wait
