@@ -19,7 +19,7 @@ char *perform_GET_request(HTTPS_REQ_T *req);
 #define TIMEOUT_US 0
 #define BUFFER_SIZE 4096 // too small?
 
-#define CACHE_PORT 9150
+#define CACHE_PORT 1025
 
 int main(int argc, char **argv)
 {
