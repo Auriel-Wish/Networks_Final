@@ -281,15 +281,18 @@ HTTPS_REQ_T* read_client_request(int fd, Node **front)
     return request;
 }
 
-void respond_to_client(int fd, char *msg, int msg_size)
+
+void respond_to_client(int fd, char *msg, int msg_size, Node **front)
 {
-    printf("About to send to the message\n");
-    int n = write(fd, msg, msg_size);
-    // // printf("Responding to the client\n");
-    if (n < 0) {
-        error("Something bad happened");
+    Context_T *curr_context = get_ssl_context(*front, fd);
+
+    printf("About to send the message over SSL\n");
+    int n = SSL_write(curr_context->ssl, msg, msg_size);
+    if (n <= 0) {
+        ERR_print_errors_fp(stderr); // Print SSL error details
+        error("Something bad happened during SSL_write");
     }
-    printf("Done sending the message\n");
+    printf("Done sending the message over SSL\n");
 
 }
 

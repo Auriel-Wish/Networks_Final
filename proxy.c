@@ -137,7 +137,7 @@ int main(int argc, char **argv)
                         request_complete = 1;
 
                         printf("\n\nI'm done here\n\n");
-                        respond_to_client(i, response, BUFFER_SIZE);
+                        respond_to_client(i, response, BUFFER_SIZE, &ssl_contexts);
 
                     }
 
