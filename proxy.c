@@ -131,7 +131,6 @@ int main(int argc, char **argv)
 
                     // if it was a get request (and not a connect request)
                     if (req != NULL) {
-                        // printf("HTTP REQUEST\n");
                         response = perform_GET_request(req);
                     }
 
@@ -161,19 +160,17 @@ char *perform_GET_request(HTTPS_REQ_T *req) {
     struct sockaddr_in serveraddr;
     struct hostent *server;
     portno = CACHE_PORT;
-    char *hostname = "10.4.2.20";    
+    char *cache_hostname = "10.4.2.20";    
     
-    char *temp_buff = req->request_string;
-
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket creation failed");
         exit(EXIT_FAILURE);
     }
 
     /* gethostbyname: get the server's DNS entry */
-    server = gethostbyname(hostname);
+    server = gethostbyname(cache_hostname);
     if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host as %s\n", hostname);
+        fprintf(stderr,"ERROR, no such host as %s\n", cache_hostname);
         exit(0);
     }
 
@@ -186,14 +183,14 @@ char *perform_GET_request(HTTPS_REQ_T *req) {
 
     serverlen = sizeof(serveraddr);
 
-    printf("Sending message to server: %s\n", temp_buff);
-    if (sendto(sockfd, temp_buff, strlen(temp_buff), 0, (struct sockaddr*)&serveraddr, serverlen) < 0) {
+    char *req_data = (char *)malloc(req->size_of_request + sizeof(req->portno));
+    memcpy(req_data, &(req->portno), sizeof(req->portno));
+    memcpy(req_data + sizeof(req->portno), (req->request_string), req->size_of_request);
+    if (sendto(sockfd, req_data, req->size_of_request + sizeof(req->portno), 0, (struct sockaddr*)&serveraddr, serverlen) < 0) {
         perror("Send failed");
         close(sockfd);
         exit(EXIT_FAILURE);
     }
-
-    printf("Message has been send\n");
 
     char buffer[BUFFER_SIZE];
     int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&serveraddr, &serverlen);

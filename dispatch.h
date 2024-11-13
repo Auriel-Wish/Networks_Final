@@ -8,11 +8,10 @@ typedef struct {
     unsigned size;
 } Dispatch_T;
 
-typedef struct {
-    unsigned size;
-
+typedef struct __attribute__((__packed__)) {
+    uint32_t size_of_request;
     char *hostname;
-    char *portno;
+    int portno;
     char *request_string;
 } HTTPS_REQ_T;
 

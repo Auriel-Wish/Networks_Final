@@ -5,6 +5,7 @@
         "ssl.h": "c",
         "stdio.h": "c",
         "socket.h": "c",
-        "err.h": "c"
+        "err.h": "c",
+        "tuple": "c"
     }
 }
