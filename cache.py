@@ -117,8 +117,8 @@ def cache_server(port):
                 cache[cache_key] = cache_value
 
             print(f"Responding with fresh response:\n{response}")
-            with open("not_in_cache.txt", "w") as f:
-                f.write(response)
+            # with open("not_in_cache.txt", "w") as f:
+            #     f.write(response)
             server_socket.sendto(response.encode(), a2_address)
 
     server_socket.close()
