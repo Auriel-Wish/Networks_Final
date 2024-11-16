@@ -2,42 +2,43 @@
 from utils import *
 
 class CacheKey:
-    def __init__(self, full_url, client_address):
+    def __init__(self, full_url, original_client_fd):
         self.full_url = full_url
-        self.client_address = client_address
+        self.original_client_fd = original_client_fd
     
     def __eq__(self, other):
         if isinstance(other, CacheKey):
-            return self.full_url == other.full_url and self.client_address == other.client_address
+            return self.full_url == other.full_url and self.original_client_fd == other.original_client_fd
         return False
 
     def __hash__(self):
-        return hash((self.full_url, self.client_address))
+        return hash((self.full_url, self.original_client_fd))
 
 class CacheValue:
     def __init__(self, text, time_saved):
         self.text = text
         self.time_saved = time_saved
 
-def cache_server(port):
+def cache_server():
     cache = {}
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind(('localhost', port))
-
-    print(f"Cache listening on port {port}")
+    server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    socket_path = f"/tmp/cache_server.sock"
+    if os.path.exists(socket_path):
+        os.remove(socket_path)
+    server_socket.bind(socket_path)
+    print(f"Cache listening on path {socket_path}")
 
     while True:
         # Receive the request from the client
-        request, a2_address = server_socket.recvfrom(BUFFER_SIZE)
-        print(f"Received request from {a2_address}")
-        # print_cache(cache)
+        request, client_address = server_socket.recvfrom(BUFFER_SIZE)
+
+        print("Received Data")
+        if request == b'':
+            break
 
         port_number = int.from_bytes(request[:4], byteorder='little')
         http_request = request[4:]
-
-        # print(f"\nPort number: {port_number}")
-        # print(f"\nRequest:\n{http_request}")
 
         # Extract the HTTP request from the rest of the bytes
 
@@ -54,13 +55,13 @@ def cache_server(port):
             full_url = f"{host}{sub_url}"
 
         response = None
-        client_address = None
+        original_client_fd = None
 
         for header in headers:
             if header.startswith("X-Original-Client-Address:"):
-                client_address = header.split(":")[1].strip()
+                original_client_fd = int(header.split(":")[1].strip())
                 break
-        cache_key = CacheKey(full_url, client_address)
+        cache_key = CacheKey(full_url, original_client_fd)
         # Check if the URL is in the cache
         if cache_key in cache:
             if time.time() - cache[cache_key].time_saved > TIMEOUT:
@@ -68,38 +69,34 @@ def cache_server(port):
             else:
                 response = cache[cache_key].text
         
-        if response is not None:
-            with open("in_cache.txt", "w") as f:
-                f.write(response)
-            print(f"Responding with cached response:\n{response}")
-            server_socket.sendto(response.encode(), a2_address)
-        else:
+        if response is None:
             context = ssl.create_default_context()
-            print(f"Making a fresh request to {host}")
+            print(f"Making a fresh request to {host} on port {port_number}")
             with socket.create_connection((host, port_number)) as sock:
                 with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    print(f"Sending request to {host} on port {port_number}")
-                    print(f"Request:\n{http_request}")
                     ssock.sendall(http_request)
 
                     response = b""
                     content_length = -1
                     header_length = -1
+                    i = False
                     while True:
                         data = ssock.recv(BUFFER_SIZE)
+                        # if not i:
+                        #     print(f"data: {data}")
+                        #     i = True
                         if data:
                             response += data
-                            if len(response) >= header_length + content_length and content_length != -1 and header_length != -1:
-                                break
-                        else:
+                            lower_case_response = response.lower()
+                            if content_length == -1 and b'\r\ncontent-length:' in lower_case_response:
+                                content_length = int(lower_case_response.split(b'\r\ncontent-length:')[1].split(b'\r\n')[0])
+                            if header_length == -1 and b'\r\n\r\n' in response:
+                                header_length = response.index(b'\r\n\r\n') + 4
+                        print(f"Response Length: {len(response)}")
+                        print(f"Content Length: {content_length}")
+                        print(f"Header Length: {header_length}")
+                        if len(response) >= header_length + content_length and (content_length != -1 and header_length != -1):
                             break
-                        if content_length == -1:
-                            headers = response.split(b'\r\n\r\n')[0]
-                            header_length = len(headers + b'\r\n\r\n')
-                            for header in headers.split(b'\r\n'):
-                                if header.startswith(b'Content-Length:'):
-                                    content_length = int(header.split(b':')[1].strip())
-                                    break
 
             response = response.decode()
 
@@ -115,11 +112,25 @@ def cache_server(port):
                     oldest_cache_key = min(cache, key=lambda k: cache[k].time_saved)
                     del cache[oldest_cache_key]
                 cache[cache_key] = cache_value
+        else:
+            print("Cache hit")
 
-            print(f"Responding with fresh response:\n{response}")
-            # with open("not_in_cache.txt", "w") as f:
-            #     f.write(response)
-            server_socket.sendto(response.encode(), a2_address)
+        # print(f"RESPONSE:\n{response}")
+        # for i in range(0, len(response), BUFFER_SIZE - 1):
+        #     to_send = original_client_fd.to_bytes(1, byteorder='big') + response[i:i + BUFFER_SIZE - 1].encode()
+        #     server_socket.sendto(to_send, client_address)
+        i = 0
+        while i < len(response):
+            to_send = original_client_fd.to_bytes(1, byteorder='big') + response[i:i + BUFFER_SIZE - 1].encode()
+            try:
+                server_socket.sendto(to_send, client_address)
+                i += BUFFER_SIZE - 1
+            except OSError as e:
+                if e.errno == 55:  # No buffer space available
+                    print("No buffer space available, retrying...")
+                    time.sleep(0.1)
+                else:
+                    raise  # Re-raise the exception if it's not the expected error
 
     server_socket.close()
 
@@ -127,7 +138,7 @@ def print_cache(cache):
     print("\nCache:")
     for key, value in cache.items():
         print("------------------------------")
-        print(f"Key:\n{key.full_url}, {key.client_address}")
+        print(f"Key:\n{key.full_url}, {key.original_client_fd}")
         print(f"Value:\n{value.text}")
         print(f"Time saved: {value.time_saved}")
         print("------------------------------")
@@ -135,4 +146,4 @@ def print_cache(cache):
     print()
 
 if __name__ == '__main__':
-    cache_server(PORT)
+    cache_server()

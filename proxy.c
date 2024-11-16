@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <stdbool.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -10,38 +9,23 @@
 #include <netdb.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <sys/un.h>
 #include "dispatch.h"
 #include <time.h>
-
-char *perform_GET_request(HTTPS_REQ_T *req);
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 3
 #define TIMEOUT_US 0
-#define BUFFER_SIZE 4096 // too small?
+#define BUFFER_SIZE 4096
 
 #define CACHE_PORT 1025
 
-int main(int argc, char **argv)
-{
-    int portno;
-    int parentfd;
+void client_disconnect(int client_filedes, Node **ssl_contexts, Node **client_requests, Node **server_responses, fd_set *active_read_fd_set, fd_set *active_write_fd_set);
 
+int setup_tcp_server_socket(int portno) {
     struct sockaddr_in serveraddr;
-    struct hostent *hostp;
-    char *hostaddrp;
-
-    fd_set active_fd_set, read_fd_set;
-
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <port>\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
-    portno = atoi(argv[1]);
-    printf("Proxy listening on port %d\n", portno);
-
-    parentfd = socket(AF_INET, SOCK_STREAM, 0);
+    
+    int parentfd = socket(AF_INET, SOCK_STREAM, 0);
     if (parentfd < 0) {
         perror("Error opening socket");
         exit(EXIT_FAILURE);
@@ -63,28 +47,80 @@ int main(int argc, char **argv)
 
     if (listen(parentfd, 0) < 0)
         perror("Error on listen");
+    
+    return parentfd;
+}
 
+int main(int argc, char **argv)
+{
+    int portno;
+
+    struct hostent *hostp;
+    char *hostaddrp;
+
+    fd_set active_read_fd_set, read_fd_set, active_write_fd_set, write_fd_set;
+
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    portno = atoi(argv[1]);
+    printf("Proxy listening on port %d\n", portno);
+    
+    int parentfd = setup_tcp_server_socket(portno);
 
     /* Initialize the set of active sockets */
-    FD_ZERO (&active_fd_set);
-    FD_SET (parentfd, &active_fd_set);
+    FD_ZERO(&active_read_fd_set);
+    FD_ZERO(&active_write_fd_set);
+    FD_SET(parentfd, &active_read_fd_set);
+
+    // int cache_fd = setup_cache_socket();
+    int cache_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (cache_fd < 0) {
+        perror("Error creating UNIX socket");
+        return -1;
+    }
+
+    struct sockaddr_un cache_server_addr, cache_client_addr;
+    memset(&cache_client_addr, 0, sizeof(cache_client_addr));
+    cache_client_addr.sun_family = AF_UNIX;
+    strncpy(cache_client_addr.sun_path, "/tmp/cache_client.sock", sizeof(cache_client_addr.sun_path) - 1);
+    unlink(cache_client_addr.sun_path);
+    if (bind(cache_fd, (struct sockaddr *)&cache_client_addr, sizeof(cache_client_addr)) < 0) {
+        perror("Error binding client socket");
+        close(cache_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    memset(&cache_server_addr, 0, sizeof(cache_server_addr));
+    cache_server_addr.sun_family = AF_UNIX;
+    strncpy(cache_server_addr.sun_path, "/tmp/cache_server.sock", sizeof(cache_server_addr.sun_path) - 1);
+    socklen_t cache_server_len = sizeof(cache_client_addr);
+
+    FD_SET(cache_fd, &active_read_fd_set);
 
     struct sockaddr_in clientaddr;
 
     Dispatch_T *dispatch = new_dispatch();
     Node *ssl_contexts = NULL;
+    Node *client_requests = NULL;
+    Node *server_responses = NULL;
 
     while (true) {
-        read_fd_set = active_fd_set;
+        read_fd_set = active_read_fd_set;
+        write_fd_set = active_write_fd_set;
+
+        // print_fd_set(&write_fd_set, "write_fd_set");
 
         /* SELECT will timeout when the next buffered message expires */
-        if (select (FD_SETSIZE, &read_fd_set, NULL, NULL, &TIMEOUT) < 0) {
+        if (select (FD_SETSIZE, &read_fd_set, &write_fd_set, NULL, &TIMEOUT) < 0) {
             perror("ERROR with select");
         }
 
         /* Service all sockets with input pending */
         for (int i = 0; i < FD_SETSIZE; ++i) {
-            if (FD_ISSET (i, &read_fd_set)) {
+            if (FD_ISSET(i, &read_fd_set)) {
                 if (i == parentfd) {
                     /* Connection request on parent socket */
                     int new_fd;
@@ -116,40 +152,101 @@ int main(int argc, char **argv)
                         hostp->h_name, hostaddrp);
 
                     /* Adding new connection request to active socket set */
-                    FD_SET(new_fd, &active_fd_set);
+                    FD_SET(new_fd, &active_read_fd_set);
                 }
+                else if (i == cache_fd) {
+                    char *buffer = read_server_response(cache_fd, &cache_server_addr, &cache_server_len);
+                    int client_filedes = buffer[0];
+                    char *response_string = buffer + 1;
 
-                else {
-                    /* Incoming data from already-connected socket */
-                    printf("\nreading client request\n");
-                    HTTPS_REQ_T *req = read_client_request(i, &ssl_contexts);
+                    printf("Received response from cache for client %d\n", client_filedes);
 
-                    char *response = NULL;
-                    (void)response;
-
-                    // Leaving the cache fetch out for now, since it requires
-                    // python server with the real cache to be running
-
-                    volatile int request_complete = 0;
-                    // if it was a get request (and not a connect request)
-                    if (req != NULL) {
-                        response = perform_GET_request(req);
-                        request_complete = 1;
-
-                        printf("\n\nI'm done here\n\n");
-                        respond_to_client(i, response, BUFFER_SIZE, &ssl_contexts);
-
+                    server_response *incomplete_response = get_server_response(server_responses, client_filedes);
+                    printf("\n%p\n", incomplete_response);
+                    if (incomplete_response == NULL) {
+                        incomplete_response = read_new_server_response(response_string);
+                        incomplete_response->filedes = client_filedes;
+                        append(&server_responses, incomplete_response);
+                    }
+                    else {
+                        read_existing_server_response(&incomplete_response, response_string);
                     }
 
-                    /* Else, fetch from the actual webpage */
-                    // response = fetch(req);
-                    /* then return the response to the client */
-                    // while (!request_complete) { sleep(0); }  // spin wait
-                    // respond_to_client(i, response, BUFFER_SIZE);
+                    if (server_response_is_complete(incomplete_response)) {
+                        incomplete_response->response_complete = true;
+                        FD_SET(client_filedes, &active_write_fd_set);
+                    }
+                }
+                else {
+                    Context_T *curr_context = get_ssl_context(ssl_contexts, i);
+                    if (curr_context == NULL) {
+                        client_request *incomplete_request = read_new_client_request(i, &ssl_contexts, curr_context);
+                        if (incomplete_request != NULL && incomplete_request->filedes == -1) {
+                            client_disconnect(i, &ssl_contexts, &client_requests, &server_responses, &active_read_fd_set, &active_write_fd_set);
+                        }
+                    }
+                    else {
+                        /* Incoming data from already-connected socket */
+                        // TODO - read the request in a loop and add it to pre-existing request
+                        client_request *incomplete_request = get_client_request(client_requests, i);
+                        if (incomplete_request == NULL) {
+                            incomplete_request = read_new_client_request(i, &ssl_contexts, curr_context);
+                            append(&client_requests, incomplete_request);
 
-                    /* Need to figure out the circumstances under which we close socket */
-                    /* Right now, it's after every request*/
-                    // FD_CLR(i, &active_fd_set);
+                            if (incomplete_request != NULL && incomplete_request->filedes == -1) {
+                                client_disconnect(i, &ssl_contexts, &client_requests, &server_responses, &active_read_fd_set, &active_write_fd_set);
+                            }
+                        }
+                        else {
+                            read_existing_incomplete_client_request(&incomplete_request, curr_context);
+                        }
+
+                        if (req_is_complete(incomplete_request)) {
+                            incomplete_request->request_complete = true;
+                            FD_SET(cache_fd, &active_write_fd_set);
+                        }
+                    }
+                }
+            }
+            if (FD_ISSET(i, &write_fd_set)) {
+                if (i == cache_fd) {
+                    for (Node *curr = client_requests; curr != NULL; curr = curr->next) {
+                        client_request *curr_request = curr->data;
+                        if (curr_request->request_complete) {
+                            int client_filedes = curr_request->filedes;
+                            Context_T *curr_context = get_ssl_context(ssl_contexts, client_filedes);
+                            int curr_port = curr_context->port;
+                            send_request_to_cache(curr_request, cache_fd, curr_port, &cache_server_addr, cache_server_len);
+                            free(curr_request->request_string);
+                            removeNode(&client_requests, curr_request);
+                            curr_request = NULL;
+                        }
+                    }
+                    
+                    bool should_clear = true;
+                    for (Node *curr = client_requests; curr != NULL; curr = curr->next) {
+                        client_request *curr_request = curr->data;
+                        if (curr_request->request_complete) {
+                            should_clear = false;
+                            break;
+                        }
+                    }
+                    if (should_clear) {
+                        FD_CLR(i, &active_write_fd_set);
+                    }
+                }
+                else {
+                    for (Node *curr = server_responses; curr != NULL; curr = curr->next) {
+                        server_response *curr_response = curr->data;
+                        if (curr_response->response_complete && curr_response->filedes == i) {
+                            respond_to_client(curr_response, ssl_contexts);
+                            free(curr_response->response_string);
+                            removeNode(&server_responses, curr_response);
+                            curr_response = NULL;
+                            FD_CLR(i, &active_write_fd_set);
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -160,128 +257,28 @@ int main(int argc, char **argv)
     return 0;
 }
 
+void client_disconnect(int client_filedes, Node **ssl_contexts, Node **client_requests, Node **server_responses, fd_set *active_read_fd_set, fd_set *active_write_fd_set) {
+    Context_T *curr_context = get_ssl_context(*ssl_contexts, client_filedes);
+    SSL_shutdown(curr_context->ssl);
+    close(client_filedes);
+    removeNode(ssl_contexts, curr_context);
 
-char *perform_GET_request(HTTPS_REQ_T *req) {
-    int sockfd, portno;
-    socklen_t serverlen;
-    struct sockaddr_in serveraddr;
-    struct hostent *server;
-    portno = CACHE_PORT;
-    char *cache_hostname = "localhost";    
-
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("Socket creation failed");
-        exit(EXIT_FAILURE);
+    for (Node *curr = *client_requests; curr != NULL; curr = curr->next) {
+        client_request *curr_request = curr->data;
+        if (curr_request->filedes == client_filedes) {
+            free(curr_request->request_string);
+            removeNode(client_requests, curr_request);
+        }
     }
 
-    /* gethostbyname: get the server's DNS entry */
-    server = gethostbyname(cache_hostname);
-    if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host as %s\n", cache_hostname);
-        close(sockfd);
-        exit(0);
+    for (Node *curr = *server_responses; curr != NULL; curr = curr->next) {
+        server_response *curr_response = curr->data;
+        if (curr_response->filedes == client_filedes) {
+            free(curr_response->response_string);
+            removeNode(server_responses, curr_response);
+        }
     }
 
-    /* build the server's Internet address */
-    bzero((char *) &serveraddr, sizeof(serveraddr));
-    serveraddr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr, 
-          (char *)&serveraddr.sin_addr.s_addr, server->h_length);
-    serveraddr.sin_port = htons(portno);
-    serverlen = sizeof(serveraddr);
-
-    // Allocate request data buffer and copy data
-    char *req_data = (char *)malloc(req->size_of_request + sizeof(req->portno));
-    if (!req_data) {
-        perror("Memory allocation failed");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-    memcpy(req_data, &(req->portno), sizeof(req->portno));
-    memcpy(req_data + sizeof(req->portno), req->request_string, req->size_of_request);
-
-    // Send the request
-    if (sendto(sockfd, req_data, req->size_of_request + sizeof(req->portno), 0, (struct sockaddr*)&serveraddr, serverlen) < 0) {
-        perror("Send failed");
-        free(req_data);
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-    free(req_data);  // Free req_data after sending
-
-    // Receive the response
-    char buffer[BUFFER_SIZE];
-    int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&serveraddr, &serverlen);
-    if (n < 0) {
-        perror("Receive failed");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    // Allocate memory for the response
-    char *cache_data = (char *)malloc(n + 1);
-    if (!cache_data) {
-        perror("Memory allocation failed");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-    memcpy(cache_data, buffer, n);
-    cache_data[n] = '\0';  // Null-terminate the response
-
-    close(sockfd);  // Close the socket before returning
-    return cache_data;  // Return the response
+    FD_CLR(client_filedes, active_read_fd_set);
+    FD_CLR(client_filedes, active_write_fd_set);
 }
-
-
-// char *perform_GET_request(HTTPS_REQ_T *req) {
-//     // (this is a client)
-//     int sockfd, portno;
-//     socklen_t serverlen;
-//     struct sockaddr_in serveraddr;
-//     struct hostent *server;
-//     portno = CACHE_PORT;
-//     char *cache_hostname = "localhost";    
-    
-//     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-//         perror("Socket creation failed");
-//         exit(EXIT_FAILURE);
-//     }
-
-//     /* gethostbyname: get the server's DNS entry */
-//     server = gethostbyname(cache_hostname);
-//     if (server == NULL) {
-//         fprintf(stderr,"ERROR, no such host as %s\n", cache_hostname);
-//         exit(0);
-//     }
-
-//     /* build the server's Internet address */
-//     bzero((char *) &serveraddr, sizeof(serveraddr));
-//     serveraddr.sin_family = AF_INET;
-//     bcopy((char *)server->h_addr, 
-// 	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
-//     serveraddr.sin_port = htons(portno);
-
-//     serverlen = sizeof(serveraddr);
-
-//     char *req_data = (char *)malloc(req->size_of_request + sizeof(req->portno));
-//     memcpy(req_data, &(req->portno), sizeof(req->portno));
-//     memcpy(req_data + sizeof(req->portno), (req->request_string), req->size_of_request);
-//     if (sendto(sockfd, req_data, req->size_of_request + sizeof(req->portno), 0, (struct sockaddr*)&serveraddr, serverlen) < 0) {
-//         perror("Send failed");
-//         close(sockfd);
-//         exit(EXIT_FAILURE);
-//     }
-
-//     char buffer[BUFFER_SIZE];
-//     int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&serveraddr, &serverlen);
-//     if (n < 0) {
-//         perror("Receive failed");
-//         close(sockfd);
-//         exit(EXIT_FAILURE);
-//     }
-
-//     char *cache_data = (char *)malloc(n + 1);
-//     memcpy(cache_data, buffer, n);
-//     cache_data[n] = '\0';
-//     return cache_data;
-// }

@@ -66,3 +66,23 @@ Context_T *get_ssl_context(Node *head, int filedes) {
     }
     return NULL;
 }
+
+client_request *get_client_request(Node *head, int filedes) {
+    for (Node *curr = head; curr != NULL; curr = curr->next) {
+        client_request *curr_request = curr->data;
+        if (curr_request->filedes == filedes) {
+            return curr_request;
+        }
+    }
+    return NULL;
+}
+
+server_response *get_server_response(Node *head, int filedes) {
+    for (Node *curr = head; curr != NULL; curr = curr->next) {
+        server_response *curr_response = curr->data;
+        if (curr_response->filedes == filedes) {
+            return curr_response;
+        }
+    }
+    return NULL;
+}
