@@ -12,6 +12,7 @@
 #include <sys/un.h>
 #include "dispatch.h"
 #include <time.h>
+#include <assert.h>
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 3
@@ -21,6 +22,8 @@
 #define CACHE_PORT 1025
 
 void client_disconnect(int client_filedes, Node **ssl_contexts, Node **client_requests, Node **server_responses, fd_set *active_read_fd_set, fd_set *active_write_fd_set);
+
+
 
 int setup_tcp_server_socket(int portno) {
     struct sockaddr_in serveraddr;
@@ -51,6 +54,8 @@ int setup_tcp_server_socket(int portno) {
     return parentfd;
 }
 
+
+
 int main(int argc, char **argv)
 {
     int portno;
@@ -75,7 +80,7 @@ int main(int argc, char **argv)
     FD_ZERO(&active_write_fd_set);
     FD_SET(parentfd, &active_read_fd_set);
 
-    // int cache_fd = setup_cache_socket();
+    // NOTE: Ignore the cache for now
     int cache_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
     if (cache_fd < 0) {
         perror("Error creating UNIX socket");
@@ -103,6 +108,7 @@ int main(int argc, char **argv)
     struct sockaddr_in clientaddr;
 
     Dispatch_T *dispatch = new_dispatch();
+
     Node *ssl_contexts = NULL;
     Node *client_requests = NULL;
     Node *server_responses = NULL;
@@ -154,13 +160,14 @@ int main(int argc, char **argv)
                     /* Adding new connection request to active socket set */
                     FD_SET(new_fd, &active_read_fd_set);
                 }
+
                 else if (i == cache_fd) {
+
                     char *buffer = read_server_response(cache_fd, &cache_server_addr, &cache_server_len);
                     int client_filedes = buffer[0];
                     char *response_string = buffer + 1;
 
                     server_response *incomplete_response = get_server_response(server_responses, client_filedes);
-                    // printf("\n%p\n", incomplete_response);
                     if (incomplete_response == NULL) {
                         incomplete_response = read_new_server_response(response_string);
                         incomplete_response->filedes = client_filedes;
@@ -175,14 +182,17 @@ int main(int argc, char **argv)
                         FD_SET(client_filedes, &active_write_fd_set);
                     }
                 }
+
                 else {
                     Context_T *curr_context = get_ssl_context(ssl_contexts, i);
+
                     if (curr_context == NULL) {
                         client_request *incomplete_request = read_new_client_request(i, &ssl_contexts, curr_context);
                         if (incomplete_request != NULL && incomplete_request->filedes == -1) {
                             client_disconnect(i, &ssl_contexts, &client_requests, &server_responses, &active_read_fd_set, &active_write_fd_set);
                         }
                     }
+
                     else {
                         client_request *incomplete_request = get_client_request(client_requests, i);
                         if (incomplete_request == NULL) {
@@ -193,6 +203,7 @@ int main(int argc, char **argv)
                                 client_disconnect(i, &ssl_contexts, &client_requests, &server_responses, &active_read_fd_set, &active_write_fd_set);
                             }
                         }
+
                         else {
                             read_existing_incomplete_client_request(&incomplete_request, curr_context);
                         }
@@ -201,12 +212,16 @@ int main(int argc, char **argv)
                             incomplete_request->request_complete = true;
                             FD_SET(cache_fd, &active_write_fd_set);
                         }
+
+
                     }
                 }
             }
+
             if (FD_ISSET(i, &write_fd_set)) {
                 if (i == cache_fd) {
                     for (Node *curr = client_requests; curr != NULL; curr = curr->next) {
+                        assert(curr != NULL);
                         client_request *curr_request = curr->data;
                         if (curr_request->request_complete) {
                             int client_filedes = curr_request->filedes;
@@ -254,6 +269,7 @@ int main(int argc, char **argv)
 }
 
 void client_disconnect(int client_filedes, Node **ssl_contexts, Node **client_requests, Node **server_responses, fd_set *active_read_fd_set, fd_set *active_write_fd_set) {
+    fprintf(stderr, "DISCONNECTING THE CLIENT\n");
     Context_T *curr_context = get_ssl_context(*ssl_contexts, client_filedes);
     SSL_shutdown(curr_context->ssl);
     close(client_filedes);

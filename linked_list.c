@@ -3,6 +3,7 @@
 #include <stdlib.h>
 // #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <assert.h>
 
 Node *createNode(void *data) {
     Node* newNode = (Node*)malloc(sizeof(Node));
@@ -10,6 +11,8 @@ Node *createNode(void *data) {
         fprintf(stderr, "Memory allocation failed\n");
         exit(1);
     }
+
+    assert(data != NULL);
     newNode->data = data;
     newNode->next = NULL;
     return newNode;
