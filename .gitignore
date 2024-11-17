@@ -2,3 +2,8 @@ a.out
 *.o
 *pycache*
 tmp/
+*.html
+*.crt
+*.key
+*.csr
+*.srl
