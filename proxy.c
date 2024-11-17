@@ -159,10 +159,8 @@ int main(int argc, char **argv)
                     int client_filedes = buffer[0];
                     char *response_string = buffer + 1;
 
-                    printf("Received response from cache for client %d\n", client_filedes);
-
                     server_response *incomplete_response = get_server_response(server_responses, client_filedes);
-                    printf("\n%p\n", incomplete_response);
+                    // printf("\n%p\n", incomplete_response);
                     if (incomplete_response == NULL) {
                         incomplete_response = read_new_server_response(response_string);
                         incomplete_response->filedes = client_filedes;
@@ -186,8 +184,6 @@ int main(int argc, char **argv)
                         }
                     }
                     else {
-                        /* Incoming data from already-connected socket */
-                        // TODO - read the request in a loop and add it to pre-existing request
                         client_request *incomplete_request = get_client_request(client_requests, i);
                         if (incomplete_request == NULL) {
                             incomplete_request = read_new_client_request(i, &ssl_contexts, curr_context);

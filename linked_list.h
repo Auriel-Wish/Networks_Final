@@ -26,14 +26,14 @@ typedef struct {
 
 typedef struct {
     int filedes;
-    uint32_t response_data_size;
+    uint32_t header_size;
+    uint32_t response_content_length;
     bool response_complete;
     char *response_string;
 } server_response;
 
 void append(Node **head, void *data);
 void removeNode(Node **head, void *data);
-void printList(Node *head);
 void freeList(Node *head);
 Context_T *get_ssl_context(Node *head, int filedes);
 client_request *get_client_request(Node *head, int filedes);

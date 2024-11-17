@@ -319,19 +319,10 @@ client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *
 
 void get_post_request_data_size(client_request **request, char *buffer) {
     // Find the size of the request data
-    char *content_length = strstr(buffer, "Content-Length: ");
-    if (content_length == NULL) {
-        content_length = strstr(buffer, "content-length: ");
-    }
-    if (content_length == NULL) {
-        content_length = strstr(buffer, "Content-length: ");
-    }
-    if (content_length == NULL) {
-        content_length = strstr(buffer, "content-Length: ");
-    }
+    char *content_length_ptr = get_content_length_ptr(buffer);
 
-    if (content_length != NULL) {
-        (*request)->request_data_size = atoi(content_length + 16);
+    if (content_length_ptr != NULL) {
+        (*request)->request_data_size = atoi(content_length_ptr + 16);
     } else if (strstr(buffer, "\r\n\r\n") != NULL) {
         (*request)->request_data_size = 0;
     } else {
@@ -418,8 +409,10 @@ server_response *read_new_server_response(char *response_string) {
     assert(response != NULL);
     response->response_string = strdup(response_string);
     response->response_complete = false;
+    response->response_content_length = -1;
+    response->header_size = -1;
 
-    get_response_data_size(&response);
+    get_response_content_length(&response);
 
     return response;
 }
@@ -432,37 +425,72 @@ void read_existing_server_response(server_response **existing_response, char *ne
     free((*existing_response)->response_string);
     (*existing_response)->response_string = new_response_string;
 
-    printf("Current response: %lu\n", strlen((*existing_response)->response_string));
+    // printf("Current response length: %lu\n", strlen((*existing_response)->response_string));
 
-    if ((*existing_response)->response_data_size == -1) {
-        get_response_data_size(existing_response);
+    if ((*existing_response)->response_content_length == -1 || (*existing_response)->header_size == -1) {
+        get_response_content_length(existing_response);
     }
 }
 
-void get_response_data_size(server_response **response) {
-    char *content_length = strstr((*response)->response_string, "content-length: ");
-    if (content_length != NULL) {
-        (*response)->response_data_size = atoi(content_length + 16);
-    } else if (strstr((*response)->response_string, "\r\n\r\n") != NULL) {
-        (*response)->response_data_size = 0;
-    } else {
-        (*response)->response_data_size = -1;
+void get_response_content_length(server_response **response) {
+    char *response_string = (*response)->response_string;
+    
+    // header size
+    if ((*response)->header_size == -1) {
+        char *header_end = strstr(response_string, "\r\n\r\n");
+        if (header_end != NULL) {
+            (*response)->header_size = header_end - response_string + 4;
+        } else {
+            (*response)->header_size = -1;
+        }
     }
+
+    // data size
+    if ((*response)->response_content_length == -1) {
+
+        char *content_length_ptr = get_content_length_ptr(response_string);
+
+        if (content_length_ptr != NULL) {
+            (*response)->response_content_length = atoi(content_length_ptr + 16);
+        } else if (strstr(response_string, "\r\n\r\n") != NULL) {
+            (*response)->response_content_length = 0;
+        } else {
+            (*response)->response_content_length = -1;
+        }
+    }
+}
+
+char *get_content_length_ptr(char *str) {
+    char *content_length = strstr(str, "Content-Length: ");
+    if (content_length == NULL) {
+        content_length = strstr(str, "content-length: ");
+    }
+    if (content_length == NULL) {
+        content_length = strstr(str, "Content-length: ");
+    }
+    if (content_length == NULL) {
+        content_length = strstr(str, "content-Length: ");
+    }
+    if (content_length == NULL) {
+        content_length = strstr(str, "CONTENT-LENGTH: ");
+    }
+    return content_length;
 }
 
 bool server_response_is_complete(server_response *response) {
-    if (response->response_data_size == -1) {
+    if (response->response_content_length == -1) {
         return false;
     }
 
-    if (response->response_data_size == 0) {
+    if (response->response_content_length == 0) {
         return true;
     }
 
-    printf("\n\nResponse data size is %d\n", response->response_data_size);
-    printf("Data length: %ld\n", strlen(response->response_string) - (strstr(response->response_string, "\r\n\r\n") - response->response_string) - 4);
+    // printf("\n\nResponse content length is %d\n", response->response_content_length);
+    // printf("Data length: %u\n", response->header_size + response->response_content_length);
+    // printf("Response length: %ld\n", strlen(response->response_string));
 
-    return strlen(response->response_string) - (strstr(response->response_string, "\r\n\r\n") - response->response_string - 4) >= response->response_data_size;
+    return strlen(response->response_string) >= response->response_content_length + response->header_size;
 }
 
 char *read_server_response(int cache_fd, struct sockaddr_un *cache_server_addr, socklen_t *cache_server_len) {

@@ -11,12 +11,12 @@ typedef struct {
     unsigned size;
 } Dispatch_T;
 
-typedef struct __attribute__((__packed__)) {
-    uint32_t size_of_request;
-    char *hostname;
-    int portno;
-    char *request_string;
-} HTTPS_REQ_T;
+// typedef struct __attribute__((__packed__)) {
+//     uint32_t size_of_request;
+//     char *hostname;
+//     int portno;
+//     char *request_string;
+// } HTTPS_REQ_T;
 
 Dispatch_T* new_dispatch();
 
@@ -38,8 +38,10 @@ char *read_server_response(int cache_fd, struct sockaddr_un *cache_server_addr, 
 
 server_response *read_new_server_response(char *response_string);
 
-void get_response_data_size(server_response **response);
+void get_response_content_length(server_response **response);
 
 void read_existing_server_response(server_response **existing_response, char *next_part_of_response_string);
 
 bool server_response_is_complete(server_response *response);
+
+char *get_content_length_ptr(char *str);

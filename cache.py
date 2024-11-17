@@ -79,22 +79,23 @@ def cache_server():
                     response = b""
                     content_length = -1
                     header_length = -1
-                    i = False
+                    i = 0
                     while True:
                         data = ssock.recv(BUFFER_SIZE)
-                        # if not i:
-                        #     print(f"data: {data}")
-                        #     i = True
+                        if i < 5:
+                            # print(f"\n\n\n\ndata: {data}")
+                            i += 1
                         if data:
+                            # print(f"Data Length: {len(data)}")
                             response += data
                             lower_case_response = response.lower()
                             if content_length == -1 and b'\r\ncontent-length:' in lower_case_response:
                                 content_length = int(lower_case_response.split(b'\r\ncontent-length:')[1].split(b'\r\n')[0])
                             if header_length == -1 and b'\r\n\r\n' in response:
                                 header_length = response.index(b'\r\n\r\n') + 4
-                        print(f"Response Length: {len(response)}")
-                        print(f"Content Length: {content_length}")
-                        print(f"Header Length: {header_length}")
+                        # print(f"Response Length: {len(response)}")
+                        # print(f"Content Length: {content_length}")
+                        # print(f"Header Length: {header_length}")
                         if len(response) >= header_length + content_length and (content_length != -1 and header_length != -1):
                             break
 
