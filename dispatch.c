@@ -212,15 +212,14 @@ void handle_connect_request(int fd, Node **front)
         ctx = create_ssl_context();
         configure_ssl_context(ctx, hostname);
         
-        // do we need the client addr
-
         SSL *ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);
 
         Context_T *new_context = malloc(sizeof(Context_T));
         assert(new_context != NULL);
-        new_context->ssl = ssl;
+
         new_context->filedes = fd;
+        new_context->ssl = ssl;
         new_context->hostname = malloc(strlen(hostname) + 1);
         strcpy(new_context->hostname, hostname);
         new_context->port = atoi(strtok(NULL, " "));
@@ -228,6 +227,8 @@ void handle_connect_request(int fd, Node **front)
         // Step 3: Send a 200 Connection established response to the client
         const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
         write(fd, connect_response, strlen(connect_response));
+
+        printf("Trying to establish SSL connection\n");
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(ssl) <= 0) {
@@ -238,6 +239,8 @@ void handle_connect_request(int fd, Node **front)
             return;
         }
 
+        //HERE
+        assert(new_context != NULL);
         append(front, new_context);
 
         // SSL connection is now established with the client
@@ -245,90 +248,104 @@ void handle_connect_request(int fd, Node **front)
         // Forward requests to the actual server as needed
         printf("SSL connection established with client.\n");
     } else {
+        error("Not a CONNECT request\n");
         // If it’s not a CONNECT request, handle it differently or close the connection
         // const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
         // TODO: need to handle this properly
-        assert(false);
         // SSL_write(ssl, error_response, strlen(error_response));
     }
 }
 
 client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *curr_context)
 {
-    // CHECK if the fd is already associated with a SSL connection
-    // Auriel TODO
-    client_request *request = NULL;
-
     if (curr_context == NULL) {
-        // if no, read HTTP CONNECT (should be a connect)
-        //setup SSL connection, adds to FD -> SSL mapping
-        // TODO: This needs to take in a pointer to Auriel's linked list
+        /* No SSL Context associated with this file descriptor */
+
+        // read HTTP CONNECT (should be a connect)
+        // setup SSL connection, adds to FD -> SSL mapping
+        printf("No existing SSL context\n");
         handle_connect_request(fd, ssl_contexts);
-
-    } else {
-        // if yes, read HTTPS GET using SSL read (should be a GET)
-        // handle normal requests
-        // TODO: buffer SSL read
-        char buffer[BUFFER_SIZE];
-        int n;
-        n = SSL_read(curr_context->ssl, buffer, BUFFER_SIZE - 1);
-        if (n < 0) {
-            error("ERROR reading from socket");
-        }
-        if (n == 0) {
-            printf("Client closed connection\n");
-            request = malloc(sizeof(client_request));
-            request->filedes = -1;
-            return request;
-        }
-        buffer[n] = '\0';
-
-        request = malloc(sizeof(client_request));
-        assert(request != NULL);
-
-        // REMEMBER: buffer[buffer_length] is the null terminator
-        request->request_string = strdup(buffer);
-        request->filedes = fd;
-        request->request_complete = false;
-
-        if (strncmp(buffer, "GET", 3) == 0) {
-            request->req_type = GET_REQUEST;
-            request->request_data_size = 0;
-        } else if (strncmp(buffer, "POST", 4) == 0) {
-            request->req_type = POST_REQUEST;
-            get_post_request_data_size(&request, request->request_string);
-        } else {
-            printf("Unknown request type\n");
-            request->req_type = 'U';
-        }
-
-        return request;
-
-        // I think we only actually need the request string - we already
-        // have the hostname and port number
-        // request = malloc(sizeof(HTTPS_REQ_T));
-        // assert(request != NULL);
-        // request->request_string = strdup(buffer);
-        // request->hostname = strdup(curr_context->hostname);
-        // request->portno = curr_context->port;
-        // request->size_of_request = n;
+        return NULL;
     }
 
-    
-    return NULL;
+    /* Existing SSL Context associated with this file descriptor */
+    /* Ready to read client request */
+
+    client_request *request = malloc(sizeof(client_request));
+    assert(request != NULL);
+
+    char buffer[BUFFER_SIZE];
+    int n;
+    n = SSL_read(curr_context->ssl, buffer, BUFFER_SIZE - 1);
+    if (n < 0) {
+        // Only here should a client get disconnected
+        request->filedes = fd;
+        request->req_type = 0;
+        request->request_complete = false;
+        request->request_data_size = -1;
+        request->request_string = NULL;
+        return request;
+    }
+
+    if (n == 0) {
+        printf("Client closed connection\n");
+        return NULL;
+    }
+
+    buffer[n] = '\0';
+
+
+
+    // REMEMBER: buffer[buffer_length] is the null terminator
+    if (strncmp(buffer, "GET", 3) == 0) {
+        request->req_type = GET_REQUEST;
+        request->request_data_size = 0;
+    } else if (strncmp(buffer, "POST", 4) == 0) {
+        request->req_type = POST_REQUEST;
+        int size = get_post_request_data_size(request->request_string);
+        request->request_data_size = size;
+    } else {
+        printf("Unknown request type\n");
+        request->req_type = 'U';
+        request->request_data_size = 0;
+        error("Unknown request type\n");
+    }
+
+    request->filedes = fd;
+    request->request_string = strdup(buffer);
+    request->request_complete = false;
+
+    return request;
 }
 
-void get_post_request_data_size(client_request **request, char *buffer) {
+int get_post_request_data_size(char *buffer) {
     // Find the size of the request data
     char *content_length_ptr = get_content_length_ptr(buffer);
 
     if (content_length_ptr != NULL) {
-        (*request)->request_data_size = atoi(content_length_ptr + 16);
+        return atoi(content_length_ptr + 16);
     } else if (strstr(buffer, "\r\n\r\n") != NULL) {
-        (*request)->request_data_size = 0;
+        return 0;
     } else {
-        (*request)->request_data_size = -1;
+        return -1;
     }
+}
+
+char *get_content_length_ptr(char *str) {
+    char *content_length = strstr(str, "Content-Length: ");
+    if (content_length == NULL) {
+        content_length = strstr(str, "content-length: ");
+    }
+    if (content_length == NULL) {
+        content_length = strstr(str, "Content-length: ");
+    }
+    if (content_length == NULL) {
+        content_length = strstr(str, "content-Length: ");
+    }
+    if (content_length == NULL) {
+        content_length = strstr(str, "CONTENT-LENGTH: ");
+    }
+    return content_length;
 }
 
 void read_existing_incomplete_client_request(client_request **incomplete_request, Context_T *curr_context) {    
@@ -337,24 +354,24 @@ void read_existing_incomplete_client_request(client_request **incomplete_request
     n = SSL_read(curr_context->ssl, buffer, BUFFER_SIZE - 1);
     buffer[n] = '\0';
 
-    // Append the new data to the existing request
+    // Add the new data to the existing request
     char *new_request_string = malloc(strlen((*incomplete_request)->request_string) + n + 1);
     strcpy(new_request_string, (*incomplete_request)->request_string);
     strcat(new_request_string, buffer);
     free((*incomplete_request)->request_string);
     (*incomplete_request)->request_string = new_request_string;
 
+    // NOTE: req_is_complete() will check to see if the request is complete
     if ((*incomplete_request)->req_type == POST_REQUEST) {
-        if ((*incomplete_request)->request_data_size == -1) {
-            get_post_request_data_size(incomplete_request, (*incomplete_request)->request_string);
-        }
+        // if ((*incomplete_request)->request_data_size == -1)
+        assert((*incomplete_request)->request_data_size == -1);
+        int size = get_post_request_data_size((*incomplete_request)->request_string);
+        (*incomplete_request)->request_data_size = size;
     }
 }
 
 bool req_is_complete(client_request *req) {
-    assert(req != NULL);
     if (req == NULL) {
-        fprintf(stderr, "HANDLING THIS NOW\n");
         return false;
     }
 
@@ -362,14 +379,13 @@ bool req_is_complete(client_request *req) {
         return strstr(req->request_string, "\r\n\r\n") != NULL;
     } 
     
-    // else if (req->req_type == POST_REQUEST) {
-    //     if (strstr(req->request_string, "\r\n\r\n") == NULL) {
-    //         return false;
-    //     }
-    //     return strlen(req->request_string) - (strstr(req->request_string, "\r\n\r\n") - req->request_string) >= (unsigned) req->request_data_size;
-    // } else {
-    //     return false;
-    // }
+    else if (req->req_type == POST_REQUEST) {
+        if (strstr(req->request_string, "\r\n\r\n") == NULL) {
+            return false;
+        }
+
+        return strlen(req->request_string) - (strstr(req->request_string, "\r\n\r\n") - req->request_string) >= (unsigned) req->request_data_size;
+    }
 
     return false;
 }
@@ -415,32 +431,21 @@ void send_request_to_cache(client_request *req, int cache_fd, int port, struct s
     free(write_string);
 }
 
-server_response *read_new_server_response(char *response_string) {
+server_response *read_new_server_response(char *response_string, int fd) {
     server_response *response = malloc(sizeof(server_response));
     assert(response != NULL);
+
+    response->filedes = fd;
+
     response->response_string = strdup(response_string);
     response->response_complete = false;
-    response->response_content_length = -1;
+
     response->header_size = -1;
+    response->response_content_length = -1;
 
     get_response_content_length(&response);
 
     return response;
-}
-
-void read_existing_server_response(server_response **existing_response, char *next_part_of_response_string) {
-    char *new_response_string = malloc(strlen((*existing_response)->response_string) + strlen(next_part_of_response_string) + 1);
-    strcpy(new_response_string, (*existing_response)->response_string);
-    strcat(new_response_string, next_part_of_response_string);
-    new_response_string[strlen((*existing_response)->response_string) + strlen(next_part_of_response_string)] = '\0';
-    free((*existing_response)->response_string);
-    (*existing_response)->response_string = new_response_string;
-
-    // printf("Current response length: %lu\n", strlen((*existing_response)->response_string));
-
-    if ((*existing_response)->response_content_length == -1 || (*existing_response)->header_size == -1) {
-        get_response_content_length(existing_response);
-    }
 }
 
 void get_response_content_length(server_response **response) {
@@ -458,7 +463,6 @@ void get_response_content_length(server_response **response) {
 
     // data size
     if ((*response)->response_content_length == -1) {
-
         char *content_length_ptr = get_content_length_ptr(response_string);
 
         if (content_length_ptr != NULL) {
@@ -471,22 +475,24 @@ void get_response_content_length(server_response **response) {
     }
 }
 
-char *get_content_length_ptr(char *str) {
-    char *content_length = strstr(str, "Content-Length: ");
-    if (content_length == NULL) {
-        content_length = strstr(str, "content-length: ");
+void read_existing_server_response(server_response **existing_response, char *next_part_of_response_string) {
+
+    char *new_response_string = malloc(strlen((*existing_response)->response_string) + strlen(next_part_of_response_string) + 1);
+
+    strcpy(new_response_string, (*existing_response)->response_string);
+    strcat(new_response_string, next_part_of_response_string);
+
+    new_response_string[strlen((*existing_response)->response_string) + strlen(next_part_of_response_string)] = '\0';
+    free((*existing_response)->response_string);
+    (*existing_response)->response_string = new_response_string;
+
+    // printf("Current response length: %lu\n", strlen((*existing_response)->response_string));
+
+    if ((*existing_response)->response_content_length == -1 || (*existing_response)->header_size == -1) {
+        get_response_content_length(existing_response);
     }
-    if (content_length == NULL) {
-        content_length = strstr(str, "Content-length: ");
-    }
-    if (content_length == NULL) {
-        content_length = strstr(str, "content-Length: ");
-    }
-    if (content_length == NULL) {
-        content_length = strstr(str, "CONTENT-LENGTH: ");
-    }
-    return content_length;
 }
+
 
 bool server_response_is_complete(server_response *response) {
     if (response->response_content_length == -1) {
@@ -533,31 +539,3 @@ void respond_to_client(server_response *res, Node *ssl_contexts) {
         error("Something bad happened during SSL_write");
     }
 }
-
-
-/* Old hardcoding 
-    This step could be super difficult because we need to pretend to be our
-    own SSL certificate. For now, we will keep it simple by hardcoding the
-    HTTPS request in the buffer    
-
-    Buffer_T *incoming = read_get_request(fd);
-    (void)incoming;
-
-
-    // if client disconnects, return NULL
-    HTTPS_REQ_T *req = malloc(sizeof(HTTPS_REQ_T));
-    assert(req != NULL);
-
-    //The HTTPS request is currently hardcoded here. Once we successfully can
-    //communicate with the client via HTTPS, we will change this
-    char *hostname = "google.com";
-    char *port = "443";
-    char *request = "GET / HTTP/1.1\r\nHost: www.example.com\r\nConnection: close\r\n\r\n";
-
-    req->size = strlen(request);
-    req->hostname = strdup(hostname);
-    req->portno = strdup(port);
-    req->request = strdup(request);
-
-    return req;
-*/

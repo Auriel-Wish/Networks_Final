@@ -17,29 +17,29 @@ typedef struct {
 } Context_T;
 
 typedef struct {
-    int filedes;
     char req_type;
-
-    // Check
     int request_data_size;
-    bool request_complete;
+
+    int filedes;
     char *request_string;
+    bool request_complete;
 } client_request;
 
 typedef struct {
     int filedes;
     
-    // check these too
     int header_size;
     int response_content_length;
     
-    bool response_complete;
     char *response_string;
+    bool response_complete;
 } server_response;
 
 void append(Node **head, void *data);
 void removeNode(Node **head, void *data);
 void freeList(Node *head);
+
 Context_T *get_ssl_context(Node *head, int filedes);
+
 client_request *get_client_request(Node *head, int filedes);
 server_response *get_server_response(Node *head, int filedes);

@@ -26,7 +26,7 @@ client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *
 
 void respond_to_client(server_response *res, Node *ssl_contexts);
 
-void get_post_request_data_size(client_request **request, char *buffer);
+int get_post_request_data_size(char *buffer);
 
 void read_existing_incomplete_client_request(client_request **incomplete_request, Context_T *curr_context);
 
@@ -36,7 +36,7 @@ void send_request_to_cache(client_request *req, int cache_fd, int port, struct s
 
 char *read_server_response(int cache_fd, struct sockaddr_un *cache_server_addr, socklen_t *cache_server_len);
 
-server_response *read_new_server_response(char *response_string);
+server_response *read_new_server_response(char *response_string, int fd);
 
 void get_response_content_length(server_response **response);
 
