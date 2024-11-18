@@ -77,8 +77,10 @@ int main(int argc, char **argv)
 
     /* Initialize the set of active sockets */
     FD_ZERO(&active_read_fd_set);
-    FD_ZERO(&active_write_fd_set);
     FD_SET(parentfd, &active_read_fd_set);
+
+
+    FD_ZERO(&active_write_fd_set);
 
     // NOTE: Ignore the cache for now
     int cache_fd = socket(AF_UNIX, SOCK_DGRAM, 0);
@@ -127,6 +129,7 @@ int main(int argc, char **argv)
         /* Service all sockets with input pending */
         for (int i = 0; i < FD_SETSIZE; ++i) {
             if (FD_ISSET(i, &read_fd_set)) {
+                
                 if (i == parentfd) {
                     /* Connection request on parent socket */
                     int new_fd;
@@ -162,6 +165,9 @@ int main(int argc, char **argv)
                 }
 
                 else if (i == cache_fd) {
+                    /* Message coming from cache */
+                    //NOTE: intentionally broken for now
+                    // assert(false);
 
                     char *buffer = read_server_response(cache_fd, &cache_server_addr, &cache_server_len);
                     int client_filedes = buffer[0];
@@ -173,6 +179,7 @@ int main(int argc, char **argv)
                         incomplete_response->filedes = client_filedes;
                         append(&server_responses, incomplete_response);
                     }
+                    
                     else {
                         read_existing_server_response(&incomplete_response, response_string);
                     }
@@ -184,6 +191,7 @@ int main(int argc, char **argv)
                 }
 
                 else {
+                    /* Message coming from connected client */
                     Context_T *curr_context = get_ssl_context(ssl_contexts, i);
 
                     if (curr_context == NULL) {
@@ -194,19 +202,21 @@ int main(int argc, char **argv)
                     }
 
                     else {
+
+                        // Trying here
                         client_request *incomplete_request = get_client_request(client_requests, i);
+
                         if (incomplete_request == NULL) {
                             incomplete_request = read_new_client_request(i, &ssl_contexts, curr_context);
                             append(&client_requests, incomplete_request);
-
                             if (incomplete_request != NULL && incomplete_request->filedes == -1) {
                                 client_disconnect(i, &ssl_contexts, &client_requests, &server_responses, &active_read_fd_set, &active_write_fd_set);
                             }
                         }
-
                         else {
                             read_existing_incomplete_client_request(&incomplete_request, curr_context);
                         }
+
 
                         if (req_is_complete(incomplete_request)) {
                             incomplete_request->request_complete = true;
@@ -228,7 +238,7 @@ int main(int argc, char **argv)
                             Context_T *curr_context = get_ssl_context(ssl_contexts, client_filedes);
                             int curr_port = curr_context->port;
                             send_request_to_cache(curr_request, cache_fd, curr_port, &cache_server_addr, cache_server_len);
-                            free(curr_request->request_string);
+                            // free(curr_request->request_string);
                             removeNode(&client_requests, curr_request);
                             curr_request = NULL;
                         }

@@ -63,12 +63,12 @@ Buffer_T *read_get_request(int childfd)
     // GET requests must be less than BUFFER_SIZE right now
     while (true)
     {
-        if (i == capacity - 1) {
+        if (i == (int) (capacity - 1)) {
             // if at capacity, expand the buffer
             old_capacity = capacity;
             capacity *= 2;
             char *new_buf = calloc(capacity, sizeof(char));
-            for (int j = 0; j < old_capacity; j++) {
+            for (unsigned j = 0; j < old_capacity; j++) {
                 new_buf[j] = buf[j];
             }
 
@@ -264,6 +264,7 @@ client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *
         //setup SSL connection, adds to FD -> SSL mapping
         // TODO: This needs to take in a pointer to Auriel's linked list
         handle_connect_request(fd, ssl_contexts);
+
     } else {
         // if yes, read HTTPS GET using SSL read (should be a GET)
         // handle normal requests
@@ -313,8 +314,8 @@ client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *
         // request->size_of_request = n;
     }
 
-
-    return request;
+    
+    return NULL;
 }
 
 void get_post_request_data_size(client_request **request, char *buffer) {
@@ -351,16 +352,26 @@ void read_existing_incomplete_client_request(client_request **incomplete_request
 }
 
 bool req_is_complete(client_request *req) {
-    if (req->req_type == GET_REQUEST) {
-        return strstr(req->request_string, "\r\n\r\n") != NULL;
-    } else if (req->req_type == POST_REQUEST) {
-        if (strstr(req->request_string, "\r\n\r\n") == NULL) {
-            return false;
-        }
-        return strlen(req->request_string) - (strstr(req->request_string, "\r\n\r\n") - req->request_string) >= req->request_data_size;
-    } else {
+    assert(req != NULL);
+    if (req == NULL) {
+        fprintf(stderr, "HANDLING THIS NOW\n");
         return false;
     }
+
+    if (req->req_type == GET_REQUEST) {
+        return strstr(req->request_string, "\r\n\r\n") != NULL;
+    } 
+    
+    // else if (req->req_type == POST_REQUEST) {
+    //     if (strstr(req->request_string, "\r\n\r\n") == NULL) {
+    //         return false;
+    //     }
+    //     return strlen(req->request_string) - (strstr(req->request_string, "\r\n\r\n") - req->request_string) >= (unsigned) req->request_data_size;
+    // } else {
+    //     return false;
+    // }
+
+    return false;
 }
 
 void send_request_to_cache(client_request *req, int cache_fd, int port, struct sockaddr_un *cache_server_addr, socklen_t cache_server_len) {
@@ -490,7 +501,7 @@ bool server_response_is_complete(server_response *response) {
     // printf("Data length: %u\n", response->header_size + response->response_content_length);
     // printf("Response length: %ld\n", strlen(response->response_string));
 
-    return strlen(response->response_string) >= response->response_content_length + response->header_size;
+    return strlen(response->response_string) >= (unsigned) (response->response_content_length + response->header_size);
 }
 
 char *read_server_response(int cache_fd, struct sockaddr_un *cache_server_addr, socklen_t *cache_server_len) {

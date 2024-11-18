@@ -19,15 +19,20 @@ typedef struct {
 typedef struct {
     int filedes;
     char req_type;
-    uint32_t request_data_size;
+
+    // Check
+    int request_data_size;
     bool request_complete;
     char *request_string;
 } client_request;
 
 typedef struct {
     int filedes;
-    uint32_t header_size;
-    uint32_t response_content_length;
+    
+    // check these too
+    int header_size;
+    int response_content_length;
+    
     bool response_complete;
     char *response_string;
 } server_response;

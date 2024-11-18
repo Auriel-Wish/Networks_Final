@@ -32,6 +32,24 @@ void append(Node **head, void *data) {
     current->next = newNode;
 }
 
+// void removeNode(Node **head, void *data) {
+//     Node *current = *head;
+//     Node *prev = NULL;
+
+//     while (current != NULL) {
+//         if (current->data == data) {
+//             if (prev == NULL) {
+//                 *head = current->next;
+//             } else {
+//                 prev->next = current->next;
+//             }
+//             free(current);
+//             return;
+//         }
+//         prev = current;
+//         current = current->next;
+//     }
+// }
 void removeNode(Node **head, void *data) {
     Node *current = *head;
     Node *prev = NULL;
@@ -43,7 +61,9 @@ void removeNode(Node **head, void *data) {
             } else {
                 prev->next = current->next;
             }
+            free(current->data);  // Free the data if allocated dynamically
             free(current);
+            current = NULL;       // Nullify the pointer to avoid dangling reference
             return;
         }
         prev = current;
@@ -77,6 +97,7 @@ client_request *get_client_request(Node *head, int filedes) {
             return curr_request;
         }
     }
+
     return NULL;
 }
 
@@ -89,3 +110,4 @@ server_response *get_server_response(Node *head, int filedes) {
     }
     return NULL;
 }
+
