@@ -487,7 +487,9 @@ void send_request_to_cache(client_request *req, int cache_fd, int port, struct s
         printf("Sending %lu bytes to cache\n", packet_size);
         int n = sendto(cache_fd, write_string + bytes_sent, packet_size, 0, (struct sockaddr *) cache_server_addr, (socklen_t) cache_server_len);
         if (n < 0) {
-            error("ERROR writing to cache");
+            perror("ERROR writing to cache, retrying...");
+            usleep(100000); // Wait for 0.1 seconds
+            continue; // Retry sending the same packet
         }
         bytes_sent += n;
     }
