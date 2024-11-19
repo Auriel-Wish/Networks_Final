@@ -35,6 +35,7 @@ def cache_server():
         client_address = None
         while True:
             data, client_address = server_socket.recvfrom(BUFFER_SIZE)
+            print("RECIEVED " + len(data) + " bytes.\n")
             request += data
             if b'\r\n\r\n' in request:
                 req_header_length = request.index(b'\r\n\r\n') + 4

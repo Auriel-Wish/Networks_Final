@@ -305,7 +305,6 @@ client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *
 
     char buffer[BUFFER_SIZE];
     int n;
-    printf("\n2\n");
 
     n = SSL_read(curr_context->ssl, buffer, BUFFER_SIZE - 1);
     if (n < 0) {
@@ -324,7 +323,6 @@ client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *
     }
 
     buffer[n] = '\0';
-    printf("\nFinished up\n");
 
 
 
@@ -341,25 +339,19 @@ client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *
         printf("\nMAKING A POST REQUEST\n");
         int size = get_post_request_data_size(request->request_string);
         request->request_data_size = size;
-        printf("\nget request data size\n");
     } else {
-        printf("Unknown request type\n");
-        printf("Buf is: \n%s\n", buffer);
         request->req_type = 'U';
         request->request_data_size = 0;
+        printf("Unknown request type:\nBuf is: \n%s\n", buffer);
         error("Unknown request type\n");
     }
-
-    printf("About to Finish reading new client request HERE\n");
 
     return request;
 }
 
 int get_post_request_data_size(char *buffer) {
     // Find the size of the request data
-    printf("\nget post request data size\n");
     char *content_length_ptr = get_content_length_ptr(buffer);
-    printf("\ngot pointer\n");
 
     if (content_length_ptr != NULL) {
         return atoi(content_length_ptr + 16);
@@ -372,33 +364,22 @@ int get_post_request_data_size(char *buffer) {
 
 char *get_content_length_ptr(char *str) {
     assert(str != NULL);
-    printf("%s\n", str);
-    printf("a0\n");
     char *content_length = strstr(str, "Content-Length: ");
-    printf("a1\n");
     if (content_length == NULL) {
         content_length = strstr(str, "content-length: ");
     }
-    printf("a2\n");
 
     if (content_length == NULL) {
         content_length = strstr(str, "Content-length: ");
     }
 
-    printf("a3\n");
-
     if (content_length == NULL) {
         content_length = strstr(str, "content-Length: ");
     }
 
-    printf("a4\n");
-
     if (content_length == NULL) {
         content_length = strstr(str, "CONTENT-LENGTH: ");
     }
-
-    printf("a5\n");
-
 
     return content_length;
 }
@@ -427,7 +408,6 @@ void read_existing_incomplete_client_request(client_request **incomplete_request
 }
 
 bool req_is_complete(client_request *req) {
-    printf("STARTING req is complete\n");
     if (req == NULL) {
         return false;
     }
