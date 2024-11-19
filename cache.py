@@ -38,14 +38,14 @@ def cache_server():
             request += data
             if b'\r\n\r\n' in request:
                 req_header_length = request.index(b'\r\n\r\n') + 4
-            headers = request[:req_header_length].decode().split('\r\n')
-            req_content_length = -1
-            for header in headers:
-                if header.lower().startswith("content-length:"):
-                    req_content_length = int(header.split(":")[1].strip())
-                break
-            if req_content_length == -1 or len(request) >= req_header_length + req_content_length:
-                break
+                headers = request[:req_header_length].decode().split('\r\n')
+                req_content_length = -1
+                for header in headers:
+                    if header.lower().startswith("content-length:"):
+                        req_content_length = int(header.split(":")[1].strip())
+                    break
+                if req_content_length == -1 or len(request) >= req_header_length + req_content_length:
+                    break
         print(f"\n\n\nRequest:\n{request}")
 
         print("Received Data")
