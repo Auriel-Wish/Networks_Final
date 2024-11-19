@@ -453,9 +453,15 @@ void send_request_to_cache(client_request *req, int cache_fd, int port, struct s
     memcpy(write_string, &port, sizeof(int));
     memcpy(write_string + sizeof(int), req->request_string, message_length);
 
-    int n = sendto(cache_fd, write_string, write_string_length, 0, (struct sockaddr *) cache_server_addr, (socklen_t) cache_server_len);
-    if (n < 0) {
-        error("ERROR writing to cache");
+    size_t bytes_sent = 0;
+    while (bytes_sent < write_string_length) {
+        size_t packet_size = (write_string_length - bytes_sent > 1024) ? 1024 : write_string_length - bytes_sent;
+        printf("Sending %lu bytes to cache\n", packet_size);
+        int n = sendto(cache_fd, write_string + bytes_sent, packet_size, 0, (struct sockaddr *) cache_server_addr, (socklen_t) cache_server_len);
+        if (n < 0) {
+            error("ERROR writing to cache");
+        }
+        bytes_sent += n;
     }
     free(write_string);
 }
