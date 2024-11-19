@@ -194,6 +194,7 @@ int main(int argc, char **argv)
 
                     Context_T *curr_context = get_ssl_context(ssl_contexts, i);
                     client_request *incomplete_request = NULL;
+                    printf("\n1\n");
 
                     if (curr_context == NULL) {
                         /* No SSL context exists already */
@@ -225,9 +226,12 @@ int main(int argc, char **argv)
 
                         else {
                             /* An existing incomplete request has been stored for this client */
+                            printf("HANDLING ");
                             read_existing_incomplete_client_request(&incomplete_request, curr_context);
                         }
                     }
+
+                    printf("About to check if the request was complete HERE\n");
 
                     if (req_is_complete(incomplete_request)) {
                         printf("The request was completed\n");

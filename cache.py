@@ -132,8 +132,8 @@ def cache_server():
                     del cache[oldest_cache_key]
                 cache[cache_key] = cache_value
             try:
-                response = response.decode()
-                print(f"RESPONSE:\n{response}")
+                decoded_response = response.decode()
+                print(f"RESPONSE:\n{decoded_response}")
             except:
                 None
         else:
@@ -145,7 +145,7 @@ def cache_server():
         #     server_socket.sendto(to_send, client_address)
         i = 0
         while i < len(response):
-            to_send = original_client_fd.to_bytes(1, byteorder='big') + response[i:i + BUFFER_SIZE - 1].encode()
+            to_send = original_client_fd.to_bytes(1, byteorder='big') + response[i:i + BUFFER_SIZE - 1]
             try:
                 server_socket.sendto(to_send, client_address)
                 i += BUFFER_SIZE - 1
