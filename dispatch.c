@@ -279,10 +279,10 @@ client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *
     n = SSL_read(curr_context->ssl, buffer, BUFFER_SIZE - 1);
     if (n < 0) {
         // Only here should a client get disconnected
-        request->filedes = fd;
+        request->filedes = -1;
         request->req_type = 0;
         request->request_complete = false;
-        request->request_data_size = -1;
+        request->request_data_size = 0;
         request->request_string = NULL;
         return request;
     }

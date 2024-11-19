@@ -199,7 +199,7 @@ int main(int argc, char **argv)
                         /* No SSL context exists already */
                         incomplete_request = read_new_client_request(i, &ssl_contexts, curr_context);
 
-                        if (incomplete_request != NULL && incomplete_request->request_data_size == -1) {
+                        if (incomplete_request != NULL && incomplete_request->filedes == -1) {
                             client_disconnect(i, &ssl_contexts, &client_requests, &server_responses, &active_read_fd_set, &active_write_fd_set);
                         }
                     }
@@ -213,7 +213,7 @@ int main(int argc, char **argv)
                             /* Read in a new one */
                             incomplete_request = read_new_client_request(i, &ssl_contexts, curr_context);
 
-                            if (incomplete_request != NULL && incomplete_request->request_data_size == -1) {
+                            if (incomplete_request != NULL && incomplete_request->filedes == -1) {
                                 client_disconnect(i, &ssl_contexts, &client_requests, &server_responses, &active_read_fd_set, &active_write_fd_set);
                             } 
                             
