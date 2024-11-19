@@ -38,7 +38,7 @@ def cache_server():
             request += data
             if b'\r\n\r\n' in request:
                 req_header_length = request.index(b'\r\n\r\n') + 4
-                headers = request[:req_header_length].decode().split('\r\n')
+                headers = request[4:req_header_length].decode().split('\r\n')
                 req_content_length = -1
                 for header in headers:
                     if header.lower().startswith("content-length:"):
@@ -117,10 +117,10 @@ def cache_server():
                         if len(response) >= header_length + content_length and (content_length != -1 and header_length != -1):
                             break
 
-            response = response.decode()
-
-            response_line = response.split('\r\n')[0]
-            if "200" in response_line:
+            # response = response.decode()
+            
+            response_line = response.split(b'\r\n')[0]
+            if b'200' in response_line:
                 for key in list(cache):
                     if time.time() - cache[key].time_saved > TIMEOUT:
                         del cache[key]
@@ -131,6 +131,11 @@ def cache_server():
                     oldest_cache_key = min(cache, key=lambda k: cache[k].time_saved)
                     del cache[oldest_cache_key]
                 cache[cache_key] = cache_value
+            try:
+                response = response.decode()
+                print(f"RESPONSE:\n{response}")
+            except:
+                None
         else:
             print("Cache hit")
 
