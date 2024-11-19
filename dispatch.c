@@ -170,28 +170,6 @@ void generate_certificates(const char *hostname) {
     printf("Generated %s.key and %s.crt signed by Networks_Final_Project with SAN.\n\n\n\n", hostname, hostname);
 }
 
-// void generate_certificates(const char *hostname) {
-//     char command[512];
-
-//     // Generate a private key for the hostname
-//     snprintf(command, sizeof(command), "openssl genpkey -algorithm RSA -out %s.key -pkeyopt rsa_keygen_bits:2048", hostname);
-//     system(command);
-
-//     // Generate a CSR using the private key
-//     snprintf(command, sizeof(command), "openssl req -new -key %s.key -out %s.csr -subj \"/CN=%s\"", hostname, hostname, hostname);
-//     system(command);
-
-//     // Generate the certificate signed by CA (using Networks_Final_Project.key and Networks_Final_Project.crt)
-//     snprintf(command, sizeof(command), "openssl x509 -req -in %s.csr -CA Networks_Final_Project.crt -CAkey Networks_Final_Project.key -CAcreateserial -out %s.crt -days 365 -sha256", hostname, hostname);
-//     system(command);
-
-//     // Clean up CSR file after signing
-//     snprintf(command, sizeof(command), "rm %s.csr", hostname);
-//     system(command);
-
-//     printf("Generated %s.key and %s.crt signed by Networks_Final_Project.\n\n\n\n", hostname, hostname);
-// }
-
 void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
     generate_certificates(hostname);
     
@@ -553,10 +531,6 @@ bool server_response_is_complete(server_response *response) {
     if (response->response_content_length == 0) {
         return true;
     }
-
-    // printf("\n\nResponse content length is %d\n", response->response_content_length);
-    // printf("Data length: %u\n", response->header_size + response->response_content_length);
-    // printf("Response length: %ld\n", strlen(response->response_string));
 
     return strlen(response->response_string) >= (unsigned) (response->response_content_length + response->header_size);
 }
