@@ -32,6 +32,7 @@ def cache_server():
     while True:
         # Receive the request from the client
         request, client_address = server_socket.recvfrom(BUFFER_SIZE)
+        print(f"\n\n\nRequest:\n{request}")
 
         print("Received Data")
         if request == b'':
@@ -41,9 +42,12 @@ def cache_server():
         http_request = request[4:]
 
         # Extract the HTTP request from the rest of the bytes
-
-        headers = http_request.decode().split('\r\n')[1:]
-        request_line = http_request.decode().split('\r\n')[0]
+        # try:
+        http_request_decoded = http_request.decode()
+        # except:
+        #     None
+        headers = http_request_decoded.split('\r\n')[1:]
+        request_line = http_request_decoded.split('\r\n')[0]
         _, sub_url, _ = request_line.split()
         host = None
         for header in headers:

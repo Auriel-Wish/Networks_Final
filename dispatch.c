@@ -135,32 +135,68 @@ SSL_CTX *create_ssl_context() {
 }
 
 void generate_certificates(const char *hostname) {
-    char command[512];
+    char command[1024];
 
     // Generate a private key for the hostname
     snprintf(command, sizeof(command), "openssl genpkey -algorithm RSA -out %s.key -pkeyopt rsa_keygen_bits:2048", hostname);
     system(command);
 
-    // Generate a CSR using the private key
-    snprintf(command, sizeof(command), "openssl req -new -key %s.key -out %s.csr -subj \"/CN=%s\"", hostname, hostname, hostname);
+    // Create a temporary OpenSSL configuration file to specify SAN for the CSR
+    snprintf(command, sizeof(command), 
+        "echo \"[ req ]\n"
+        "default_bits = 2048\n"
+        "distinguished_name = req_distinguished_name\n"
+        "req_extensions = v3_req\n"
+        "[ req_distinguished_name ]\n"
+        "[ v3_req ]\n"
+        "subjectAltName = @alt_names\n"
+        "[ alt_names ]\n"
+        "DNS.1 = %s\" > %s.cnf", 
+        hostname, hostname);
     system(command);
 
-    // Generate the certificate signed by CA (using ca.key and ca.crt)
-    snprintf(command, sizeof(command), "openssl x509 -req -in %s.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out %s.crt -days 365 -sha256", hostname, hostname);
+    // Generate a CSR using the private key and include SAN from the configuration
+    snprintf(command, sizeof(command), "openssl req -new -key %s.key -out %s.csr -subj \"/CN=%s\" -config %s.cnf", hostname, hostname, hostname, hostname);
     system(command);
 
-    // Clean up CSR file after signing
-    snprintf(command, sizeof(command), "rm %s.csr", hostname);
+    // Generate the certificate signed by the CA (using Networks_Final_Project.key and Networks_Final_Project.crt)
+    snprintf(command, sizeof(command), "openssl x509 -req -in %s.csr -CA Networks_Final_Project.crt -CAkey Networks_Final_Project.key -CAcreateserial -out %s.crt -days 365 -sha256 -extfile %s.cnf -extensions v3_req", hostname, hostname, hostname);
     system(command);
 
-    printf("Generated %s.key and %s.crt signed by CA.\n\n\n\n", hostname, hostname);
+    // Clean up CSR and temporary configuration file after signing
+    snprintf(command, sizeof(command), "rm %s.csr %s.cnf", hostname, hostname);
+    system(command);
+
+    printf("Generated %s.key and %s.crt signed by Networks_Final_Project with SAN.\n\n\n\n", hostname, hostname);
 }
+
+// void generate_certificates(const char *hostname) {
+//     char command[512];
+
+//     // Generate a private key for the hostname
+//     snprintf(command, sizeof(command), "openssl genpkey -algorithm RSA -out %s.key -pkeyopt rsa_keygen_bits:2048", hostname);
+//     system(command);
+
+//     // Generate a CSR using the private key
+//     snprintf(command, sizeof(command), "openssl req -new -key %s.key -out %s.csr -subj \"/CN=%s\"", hostname, hostname, hostname);
+//     system(command);
+
+//     // Generate the certificate signed by CA (using Networks_Final_Project.key and Networks_Final_Project.crt)
+//     snprintf(command, sizeof(command), "openssl x509 -req -in %s.csr -CA Networks_Final_Project.crt -CAkey Networks_Final_Project.key -CAcreateserial -out %s.crt -days 365 -sha256", hostname, hostname);
+//     system(command);
+
+//     // Clean up CSR file after signing
+//     snprintf(command, sizeof(command), "rm %s.csr", hostname);
+//     system(command);
+
+//     printf("Generated %s.key and %s.crt signed by Networks_Final_Project.\n\n\n\n", hostname, hostname);
+// }
 
 void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
     generate_certificates(hostname);
     
-    // Load the root CA certificate (ca.crt)
-    if (SSL_CTX_load_verify_locations(ctx, "ca.crt", NULL) <= 0) {
+    // Load the root CA certificate (Networks_Final_Project.crt)
+    if (SSL_CTX_load_verify_locations(ctx, "Networks_Final_Project.crt", NULL) <= 0) {
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
@@ -176,6 +212,13 @@ void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
+
+    // SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+
+    // if (SSL_CTX_add_extra_chain_cert(ctx, "Networks_Final_Project.crt") <= 0) {
+    //     ERR_print_errors_fp(stderr);
+    //     exit(EXIT_FAILURE);
+    // }
 
     if (SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
@@ -202,6 +245,8 @@ void handle_connect_request(int fd, Node **front)
 
     buffer[nbytes] = '\0';
 
+    printf("Buffer from client: %s\n", buffer);
+
     // check if the request is a connect request
     // Step 2: Check if it’s a CONNECT request
     if (strncmp(buffer, "CONNECT", 7) == 0) {
@@ -217,6 +262,8 @@ void handle_connect_request(int fd, Node **front)
         SSL *ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);
 
+        printf("\nSSL context created\n");
+
         Context_T *new_context = malloc(sizeof(Context_T));
         assert(new_context != NULL);
         new_context->ssl = ssl;
@@ -226,17 +273,21 @@ void handle_connect_request(int fd, Node **front)
         new_context->port = atoi(strtok(NULL, " "));
 
         // Step 3: Send a 200 Connection established response to the client
+        printf("\nSending 200 Connection established response to client\n");
         const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
-        write(fd, connect_response, strlen(connect_response));
+        int n = write(fd, connect_response, strlen(connect_response));
+        printf("Wrote %d bytes to client\n", n);
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(ssl) <= 0) {
+            printf("\nSSL handshake failed\n");
             ERR_print_errors_fp(stderr);
             SSL_shutdown(ssl);
             SSL_free(ssl);
             close(fd);
             return;
         }
+        printf("\nSSL handshake successful\n");
 
         append(front, new_context);
 
@@ -244,13 +295,14 @@ void handle_connect_request(int fd, Node **front)
         // You can now read/write encrypted data with SSL_read and SSL_write
         // Forward requests to the actual server as needed
         printf("SSL connection established with client.\n");
-    } else {
-        // If it’s not a CONNECT request, handle it differently or close the connection
-        // const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
-        // TODO: need to handle this properly
-        assert(false);
-        // SSL_write(ssl, error_response, strlen(error_response));
     }
+    // else {
+    //     // If it’s not a CONNECT request, handle it differently or close the connection
+    //     // const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
+    //     // TODO: need to handle this properly
+    //     assert(false);
+    //     // SSL_write(ssl, error_response, strlen(error_response));
+    // }
 }
 
 client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *curr_context)
@@ -502,6 +554,8 @@ char *read_server_response(int cache_fd, struct sockaddr_un *cache_server_addr, 
     if (n == 0) {
         printf("Server closed connection\n");
     }
+
+    printf("\n\n\nBuffer from server:\n%s\n", buffer);
 
     char *response = malloc(n + 1);
     assert(response != NULL);
