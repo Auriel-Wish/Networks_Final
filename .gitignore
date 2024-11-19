@@ -7,3 +7,4 @@ tmp/
 *.key
 *.csr
 *.srl
+spec.pdf
