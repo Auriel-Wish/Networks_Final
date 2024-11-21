@@ -14,19 +14,13 @@
 #include <netdb.h>
 
 
-void error(char *msg)
-{
-    perror(msg);
-    exit(0);
-}
-
 SSL_CTX *create_ssl_context() {
     const SSL_METHOD *method = TLS_server_method(); // Use the TLS server method
     SSL_CTX *ctx = SSL_CTX_new(method);
     if (!ctx) {
         perror("Unable to create SSL context");
         ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
+        // exit(EXIT_FAILURE);
     }
     return ctx;
 }
@@ -111,7 +105,7 @@ void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
     // Load the root CA certificate (Networks_Final_Project.crt)
     if (SSL_CTX_load_verify_locations(ctx, "Networks_Final_Project.crt", NULL) <= 0) {
         ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
+        // exit(EXIT_FAILURE);
     }
 
     // Load the domain certificate (domain.crt) and private key (domain.key)
@@ -123,18 +117,18 @@ void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
 
     if (SSL_CTX_use_certificate_file(ctx, cert_file, SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
+        // exit(EXIT_FAILURE);
     }
 
     if (SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
+        // exit(EXIT_FAILURE);
     }
 
     // Verify that the private key matches the certificate
     if (!SSL_CTX_check_private_key(ctx)) {
         fprintf(stderr, "Private key does not match the public certificate\n");
-        exit(EXIT_FAILURE);
+        // exit(EXIT_FAILURE);
     }
 }
 
@@ -213,7 +207,7 @@ void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context)
     // Use the TLS client method
     const SSL_METHOD *method = TLS_client_method();
     SSL_CTX *ctx = SSL_CTX_new(method);
-    
+
     // Set SSL context options
     SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
 
@@ -319,7 +313,6 @@ bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read
 
 bool read_server_response(int server_fd, Node **ssl_contexts) {
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
-    printf("\nSERVER_FD: %d", server_fd);
     if (curr_context == NULL) {
         return false;
     }
@@ -331,7 +324,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
     if (read_n > 0) {
         buffer[read_n] = '\0';
 
-        printf("\n\nRead n: %d\n", read_n);
         // printf("\n\nServer response: %s\n", buffer);
 
         // if (curr_context->response_header_length == -1) {
@@ -350,8 +342,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
             }
             total_written += write_n;
         }
-
-        printf("\n\nWrite n: %d\n", total_written);
 
         return true;
     }  else {
@@ -379,9 +369,6 @@ int client_or_server_fd(Node *ssl_contexts, int fd) {
 }
 
 void set_max_fd(int new_fd, int *max_fd) {
-    // if (new_fd == 0) {
-    //     printf("\nNew FD is 0\n");
-    // }
     if (new_fd + 1 > *max_fd) {
         *max_fd = new_fd + 1;
     }

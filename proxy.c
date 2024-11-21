@@ -86,12 +86,10 @@ int main(int argc, char **argv)
     while (true) {
         read_fd_set = active_read_fd_set;
 
-        printf("Selecting...\n");
         if (select(max_fd, &read_fd_set, NULL, NULL, NULL) < 0) {
             perror("ERROR with select");
-            exit(EXIT_FAILURE);
+            continue;
         }
-        // printf("Selected\n");
 
         /* Service all sockets with input pending */
         for (int i = 0; i < max_fd; ++i) {
@@ -104,7 +102,6 @@ int main(int argc, char **argv)
                     socklen_t size = sizeof(clientaddr);
                     new_fd = accept(parentfd, (struct sockaddr *)&clientaddr, 
                         &size);
-                    printf("Accepted new socket %d\n", new_fd);
 
                     if (new_fd < 0) {
                         perror("Error accepting new socket");
@@ -126,20 +123,20 @@ int main(int argc, char **argv)
                         perror("Error on inet_ntoa");
                     }
 
-                    printf("Server established connection with %s (%s)\n\n",
-                        hostp->h_name, hostaddrp);
+                    // printf("Server established connection with %s (%s)\n\n",
+                    //     hostp->h_name, hostaddrp);
 
                     /* Adding new connection request to active socket set */
                     FD_SET(new_fd, &active_read_fd_set);
                     set_max_fd(new_fd, &max_fd);
                 }
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
-                    printf("\nReading from server: %d\n", i);
+                    // printf("\nReading from server: %d\n", i);
                     if (!read_server_response(i, &ssl_contexts)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 } else /*if (client_or_server_fd(ssl_contexts, i) == CLIENT_FD)*/ {
-                    printf("\nReading from client %d\n", i);
+                    // printf("\nReading from client %d\n", i);
                     if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
@@ -153,6 +150,7 @@ int main(int argc, char **argv)
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
     fprintf(stderr, "DISCONNECTING THE CLIENT: %d\n", filedes);
+    FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
     if (curr_context == NULL) {
         curr_context = get_ssl_context_by_server_fd(*ssl_contexts, filedes);
