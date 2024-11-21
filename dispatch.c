@@ -8,114 +8,16 @@
 #include <stdbool.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 
-typedef struct {
-    char *buf;
-    int size;
-} Buffer_T;
 
 void error(char *msg)
 {
     perror(msg);
     exit(0);
-}
-
-Buffer_T *new_Buffer_T(char *buf, int size)
-{
-    Buffer_T *buffer = malloc(sizeof(Buffer_T));
-    buffer->buf = buf;
-    buffer->size = size;
-
-    return buffer;
-}
-
-Dispatch_T* new_dispatch()
-{
-    Dispatch_T *dispatch = malloc(sizeof(Dispatch_T));
-    assert(dispatch != NULL);
-
-    dispatch->placeholder = 0;
-    dispatch->buffer = NULL;
-    dispatch->size = 0;
-
-    return dispatch;
-}
-
-void free_dispatch(Dispatch_T **dispatch)
-{
-    free(*dispatch);
-    *dispatch = NULL;
-}
-
-Buffer_T *read_get_request(int childfd)
-{
-    char ch;
-    int status;
-    int i = 0;
-    bool prior_CRLF = false;
-
-    // NOTE: I'm going to allocate the buffer on the heap here.
-    // Using calloc to initialize every slot to 0
-    char *buf = calloc(BUFFER_SIZE, sizeof(char));
-    unsigned long capacity = BUFFER_SIZE;
-    unsigned long old_capacity = BUFFER_SIZE;
-
-    // GET requests must be less than BUFFER_SIZE right now
-    while (true)
-    {
-        if (i == (int) (capacity - 1)) {
-            // if at capacity, expand the buffer
-            old_capacity = capacity;
-            capacity *= 2;
-            char *new_buf = calloc(capacity, sizeof(char));
-            for (unsigned j = 0; j < old_capacity; j++) {
-                new_buf[j] = buf[j];
-            }
-
-            free(buf);
-            buf = new_buf;
-        }
-
-        status = read(childfd, &ch, 1);
-
-        if (status < 0)
-            error("ERROR reading from socket");
-
-        buf[i] = ch;
-        i++;
-
-        if (ch == '\r')
-        {
-            status = read(childfd, &ch, 1);
-            buf[i] = ch;
-            i++;
-
-            if (ch == '\n')
-            {
-                if (prior_CRLF)
-                {
-                    // two carriage returns in a row means end of request
-                    // printf("\nRequest completed\n");
-                    break;
-                }
-
-                prior_CRLF = true;
-            }
-            else
-            {
-                printf("Bad formatting\n");
-            }
-        }
-        else
-        {
-            prior_CRLF = false;
-        }
-    }
-
-    // printf("Proxy received %d bytes: \n\n%s\n\n", i, buf);
-    Buffer_T *buffer = new_Buffer_T(buf, i);
-
-    return buffer;
 }
 
 void initialize_openssl() {
@@ -138,7 +40,7 @@ void generate_certificates(const char *hostname) {
     char command[1024];
 
     // Generate a private key for the hostname
-    snprintf(command, sizeof(command), "openssl genpkey -algorithm RSA -out %s.key -pkeyopt rsa_keygen_bits:2048", hostname);
+    snprintf(command, sizeof(command), "openssl genpkey -algorithm RSA -out %s.key -pkeyopt rsa_keygen_bits:2048 > /dev/null 2>&1", hostname);
     system(command);
 
     // Create a temporary OpenSSL configuration file to specify SAN for the CSR
@@ -156,15 +58,15 @@ void generate_certificates(const char *hostname) {
     system(command);
 
     // Generate a CSR using the private key and include SAN from the configuration
-    snprintf(command, sizeof(command), "openssl req -new -key %s.key -out %s.csr -subj \"/CN=%s\" -config %s.cnf", hostname, hostname, hostname, hostname);
+    snprintf(command, sizeof(command), "openssl req -new -key %s.key -out %s.csr -subj \"/CN=%s\" -config %s.cnf > /dev/null 2>&1", hostname, hostname, hostname, hostname);
     system(command);
 
     // Generate the certificate signed by the CA (using Networks_Final_Project.key and Networks_Final_Project.crt)
-    snprintf(command, sizeof(command), "openssl x509 -req -in %s.csr -CA Networks_Final_Project.crt -CAkey Networks_Final_Project.key -CAcreateserial -out %s.crt -days 365 -sha256 -extfile %s.cnf -extensions v3_req", hostname, hostname, hostname);
+    snprintf(command, sizeof(command), "openssl x509 -req -in %s.csr -CA Networks_Final_Project.crt -CAkey Networks_Final_Project.key -CAcreateserial -out %s.crt -days 365 -sha256 -extfile %s.cnf -extensions v3_req > /dev/null 2>&1", hostname, hostname, hostname);
     system(command);
 
     // Clean up CSR and temporary configuration file after signing
-    snprintf(command, sizeof(command), "rm %s.csr %s.cnf", hostname, hostname);
+    snprintf(command, sizeof(command), "rm %s.csr %s.cnf > /dev/null 2>&1", hostname, hostname);
     system(command);
 
     printf("Generated %s.key and %s.crt signed by Networks_Final_Project with SAN.\n\n\n\n", hostname, hostname);
@@ -191,13 +93,6 @@ void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
         exit(EXIT_FAILURE);
     }
 
-    // SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
-
-    // if (SSL_CTX_add_extra_chain_cert(ctx, "Networks_Final_Project.crt") <= 0) {
-    //     ERR_print_errors_fp(stderr);
-    //     exit(EXIT_FAILURE);
-    // }
-
     if (SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
@@ -210,20 +105,17 @@ void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
     }
 }
 
-void handle_connect_request(int fd, Node **front)
-{
+bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd) {
     char buffer[BUFFER_SIZE];
     int nbytes;
 
     nbytes = read(fd, buffer, BUFFER_SIZE - 1);
+    printf("\nNBYTES: %d\n", nbytes);
     if (nbytes <= 0) {
-        //figure out a way to tell the proxy to close the socket with this client
-        assert(false);
+        return false;
     }
 
     buffer[nbytes] = '\0';
-
-    printf("Buffer from client: %s\n", buffer);
 
     // check if the request is a connect request
     // Step 2: Check if it’s a CONNECT request
@@ -235,350 +127,262 @@ void handle_connect_request(int fd, Node **front)
         ctx = create_ssl_context();
         configure_ssl_context(ctx, hostname);
         
-        SSL *ssl = SSL_new(ctx);
-        SSL_set_fd(ssl, fd);
-
-        printf("\nSSL context created\n");
+        SSL *client_ssl = SSL_new(ctx);
+        SSL_set_fd(client_ssl, fd);
 
         Context_T *new_context = malloc(sizeof(Context_T));
         assert(new_context != NULL);
 
-        new_context->filedes = fd;
-        new_context->ssl = ssl;
-        new_context->hostname = malloc(strlen(hostname) + 1);
-        strcpy(new_context->hostname, hostname);
-        new_context->port = atoi(strtok(NULL, " "));
+        new_context->client_fd = fd;
+        new_context->client_ssl = client_ssl;
+
+        // new_context->response_complete = false;
+        // new_context->response_content_length = -1;
+        // new_context->response_header_length = -1;
+        // new_context->response_total_size = 0;
 
         // Step 3: Send a 200 Connection established response to the client
-        printf("\nSending 200 Connection established response to client\n");
         const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
-        int n = write(fd, connect_response, strlen(connect_response));
-        printf("Wrote %d bytes to client\n", n);
-
-        printf("Trying to establish SSL connection\n");
+        write(fd, connect_response, strlen(connect_response));
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
-        if (SSL_accept(ssl) <= 0) {
+        if (SSL_accept(client_ssl) <= 0) {
             printf("\nSSL handshake failed\n");
             ERR_print_errors_fp(stderr);
-            SSL_shutdown(ssl);
-            SSL_free(ssl);
+            SSL_shutdown(client_ssl);
+            SSL_free(client_ssl);
             close(fd);
-            return;
+            return false;
         }
         printf("\nSSL handshake successful\n");
 
-        //HERE
-        assert(new_context != NULL);
-        append(front, new_context);
+        int port = atoi(strtok(NULL, " "));
+        open_new_conn_to_server(hostname, port, &new_context);
 
-        // SSL connection is now established with the client
-        // You can now read/write encrypted data with SSL_read and SSL_write
-        // Forward requests to the actual server as needed
-        printf("SSL connection established with client.\n");
+        assert(new_context != NULL);
+        append(ssl_contexts, new_context);
+
+        FD_SET(new_context->server_fd, active_read_fd_set);
+        set_max_fd(new_context->server_fd, max_fd);
+
+        return true;
     } else {
-        error("Not a CONNECT request\n");
-        // If it’s not a CONNECT request, handle it differently or close the connection
-        // const char *error_response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
-        // TODO: need to handle this properly
-        // SSL_write(ssl, error_response, strlen(error_response));
+        printf("Not a CONNECT request\n");
+        
+        for (int i = 0; i < nbytes; i++) {
+            putchar(buffer[i]);
+        }
+        return false;
     }
 }
 
-client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *curr_context)
-{
+void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context) {
+    printf("Opening connection to %s:%d\n", hostname, port);
+
+    // Create SSL context
+    const SSL_METHOD *method = SSLv23_client_method();
+    SSL_CTX *ctx = SSL_CTX_new(method);
+
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        perror("Unable to create socket");
+        return;
+    }
+
+    struct hostent *server = gethostbyname(hostname);
+    if (server == NULL) {
+        fprintf(stderr, "ERROR, no such host\n");
+        close(server_fd);
+        return;
+    }
+
+    struct sockaddr_in server_addr;
+    bzero((char *) &server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, (char *)&server_addr.sin_addr.s_addr, server->h_length);
+    server_addr.sin_port = htons(port);
+
+    if (connect(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
+        perror("ERROR connecting");
+        close(server_fd);
+        return;
+    }
+
+    // Create an SSL connection
+    SSL *server_ssl = SSL_new(ctx);
+    if (!server_ssl) {
+        printf("SSL creation failed\n");
+    }
+
+    SSL_set_fd(server_ssl, server_fd);
+
+    // Perform the TLS handshake
+    if (SSL_connect(server_ssl) <= 0) {
+        printf("SSL connection failed\n");
+        ERR_print_errors_fp(stderr);
+        SSL_free(server_ssl);
+        close(server_fd);
+        return;
+    }
+
+    (*curr_context)->server_fd = server_fd;
+    (*curr_context)->server_ssl = server_ssl;
+
+    printf("Connected to %s:%d\n", hostname, port);
+}
+
+bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd) {
+    Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, client_fd);
+    
     if (curr_context == NULL) {
         /* No SSL Context associated with this file descriptor */
 
         // read HTTP CONNECT (should be a connect)
         // setup SSL connection, adds to FD -> SSL mapping
-        printf("No existing SSL context\n");
-        handle_connect_request(fd, ssl_contexts);
-        return NULL;
-    }
-
-    /* Existing SSL Context associated with this file descriptor */
-    /* Ready to read client request */
-
-    client_request *request = malloc(sizeof(client_request));
-    assert(request != NULL);
-
-    char buffer[BUFFER_SIZE];
-    int n;
-
-    n = SSL_read(curr_context->ssl, buffer, BUFFER_SIZE - 1);
-    if (n < 0) {
-        // Only here should a client get disconnected
-        request->filedes = -1;
-        request->req_type = 0;
-        request->request_complete = false;
-        request->request_data_size = 0;
-        request->request_string = NULL;
-        return request;
-    }
-
-    if (n == 0) {
-        printf("Client closed connection\n");
-        return NULL;
-    }
-
-    buffer[n] = '\0';
-
-
-
-    request->filedes = fd;
-    request->request_string = strdup(buffer);
-    request->request_complete = false;
-
-    // REMEMBER: buffer[buffer_length] is the null terminator
-    if (strncmp(buffer, "GET", 3) == 0) {
-        request->req_type = GET_REQUEST;
-        request->request_data_size = 0;
-    } else if (strncmp(buffer, "POST", 4) == 0) {
-        request->req_type = POST_REQUEST;
-        printf("\nMAKING A POST REQUEST\n");
-        int size = get_post_request_data_size(request->request_string);
-        request->request_data_size = size;
+        return handle_connect_request(client_fd, ssl_contexts, active_read_fd_set, max_fd);
     } else {
-        request->req_type = 'U';
-        request->request_data_size = 0;
-        printf("Unknown request type:\nBuf is: \n%s\n", buffer);
-        error("Unknown request type\n");
-    }
+        char buffer[BUFFER_SIZE + 1];
+        int n;
 
-    return request;
-}
+        n = SSL_read(curr_context->client_ssl, buffer, BUFFER_SIZE);
+        buffer[n] = '\0';
+        
+        if (n > 0) {
+            n = SSL_write(curr_context->server_ssl, buffer, n);
+            if (n == 0) {
+                printf("Server closed connection\n");
+                return false;
+            }
+            if (n < 0) {
+                printf("Error writing to server\n");
+                return false;
+            }
 
-int get_post_request_data_size(char *buffer) {
-    // Find the size of the request data
-    char *content_length_ptr = get_content_length_ptr(buffer);
-
-    if (content_length_ptr != NULL) {
-        return atoi(content_length_ptr + 16);
-    } else if (strstr(buffer, "\r\n\r\n") != NULL) {
-        return 0;
-    } else {
-        return -1;
-    }
-}
-
-char *get_content_length_ptr(char *str) {
-    assert(str != NULL);
-    char *content_length = strstr(str, "Content-Length: ");
-    if (content_length == NULL) {
-        content_length = strstr(str, "content-length: ");
-    }
-
-    if (content_length == NULL) {
-        content_length = strstr(str, "Content-length: ");
-    }
-
-    if (content_length == NULL) {
-        content_length = strstr(str, "content-Length: ");
-    }
-
-    if (content_length == NULL) {
-        content_length = strstr(str, "CONTENT-LENGTH: ");
-    }
-
-    return content_length;
-}
-
-void read_existing_incomplete_client_request(client_request **incomplete_request, Context_T *curr_context) {    
-    char buffer[BUFFER_SIZE];
-    int n;
-    n = SSL_read(curr_context->ssl, buffer, BUFFER_SIZE - 1);
-    buffer[n] = '\0';
-
-    // Add the new data to the existing request
-    char *new_request_string = malloc(strlen((*incomplete_request)->request_string) + n + 1);
-    strcpy(new_request_string, (*incomplete_request)->request_string);
-    strcat(new_request_string, buffer);
-    free((*incomplete_request)->request_string);
-    (*incomplete_request)->request_string = new_request_string;
-
-    // NOTE: req_is_complete() will check to see if the request is complete
-    if ((*incomplete_request)->req_type == POST_REQUEST) {
-        // assert((*incomplete_request)->request_data_size != -1);
-        if ((*incomplete_request)->request_data_size == -1) {
-            int size = get_post_request_data_size((*incomplete_request)->request_string);
-            (*incomplete_request)->request_data_size = size;
+            return true;
+        } else {
+            int ssl_error = SSL_get_error(curr_context->client_ssl, n);
+            if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+                // Need to retry the operation later
+                return true; // Keep the connection open
+            } else {
+                // Handle other errors
+                // printf("\nClient FD: %d\n", curr_context->client_fd);
+                // printf("SSL_read failed with error code %d\n", ssl_error);
+                return false; // Close the connection
+            }
         }
     }
 }
 
-bool req_is_complete(client_request *req) {
-    if (req == NULL) {
+bool read_server_response(int server_fd, Node **ssl_contexts) {
+    Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
+    printf("\nSERVER_FD: %d", server_fd);
+    if (curr_context == NULL) {
         return false;
     }
 
-    if (req->req_type == GET_REQUEST) {
-        return strstr(req->request_string, "\r\n\r\n") != NULL;
-    } 
-    
-    else if (req->req_type == POST_REQUEST) {
-        if (strstr(req->request_string, "\r\n\r\n") == NULL) {
-            return false;
+    // char buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE + 1];
+    int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
+
+    if (read_n > 0) {
+        buffer[read_n] = '\0';
+
+        printf("\n\nRead n: %d\n", read_n);
+        // printf("\n\nServer response: %s\n", buffer);
+
+        // if (curr_context->response_header_length == -1) {
+        //     curr_context->response_header_length = get_header_length(buffer, n);
+        //     if (curr_context->response_header_length != -1) {
+        //         curr_context->response_content_length = get_content_length(buffer, n);
+        //     }
+        // }
+        
+        int total_written = 0;
+        while (total_written < read_n) {
+            int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
+            if (write_n <= 0) {
+                printf("Error writing to client\n");
+                return false;
+            }
+            total_written += write_n;
         }
 
-        return strlen(req->request_string) - (strstr(req->request_string, "\r\n\r\n") - req->request_string) >= (unsigned) req->request_data_size;
-    }
+        printf("\n\nWrite n: %d\n", total_written);
 
-    return false;
-}
-
-void send_request_to_cache(client_request *req, int cache_fd, int port, struct sockaddr_un *cache_server_addr, socklen_t cache_server_len) {
-    char header[256];
-    snprintf(header, sizeof(header), "\r\nX-Original-Client-Address: %d", req->filedes);
-
-    char *end_of_headers = strstr(req->request_string, "\r\n\r\n");
-    if (end_of_headers != NULL) {
-        size_t header_length = end_of_headers - req->request_string;
-        size_t new_request_length = header_length + strlen(header) + strlen(end_of_headers) + 1;
-        char *new_request_string = malloc(new_request_length);
-
-        strncpy(new_request_string, req->request_string, header_length);
-        new_request_string[header_length] = '\0';
-        strcat(new_request_string, header);
-        strcat(new_request_string, end_of_headers);
-
-        free(req->request_string);
-        req->request_string = new_request_string;
-    }
-    else {
-        printf("Something went wrong\n");
-    }
-    
-    size_t message_length = strlen(req->request_string);
-    size_t write_string_length = sizeof(int) + message_length;
-
-    char *write_string = malloc(write_string_length);
-    if (!write_string) {
-        perror("Failed to allocate memory");
-    }
-
-    // int port_network_order = htonl(port);
-    memcpy(write_string, &port, sizeof(int));
-    memcpy(write_string + sizeof(int), req->request_string, message_length);
-
-    size_t bytes_sent = 0;
-    while (bytes_sent < write_string_length) {
-        size_t packet_size = (write_string_length - bytes_sent > 1024) ? 1024 : write_string_length - bytes_sent;
-        printf("Sending %lu bytes to cache\n", packet_size);
-        int n = sendto(cache_fd, write_string + bytes_sent, packet_size, 0, (struct sockaddr *) cache_server_addr, (socklen_t) cache_server_len);
-        if (n < 0) {
-            perror("ERROR writing to cache, retrying...");
-            usleep(100000); // Wait for 0.1 seconds
-            continue; // Retry sending the same packet
-        }
-        bytes_sent += n;
-    }
-    free(write_string);
-}
-
-server_response *read_new_server_response(char *response_string, int fd) {
-    server_response *response = malloc(sizeof(server_response));
-    assert(response != NULL);
-
-    response->filedes = fd;
-
-    response->response_string = strdup(response_string);
-    response->response_complete = false;
-
-    response->header_size = -1;
-    response->response_content_length = -1;
-
-    get_response_content_length(&response);
-
-    return response;
-}
-
-void get_response_content_length(server_response **response) {
-    char *response_string = (*response)->response_string;
-    
-    // header size
-    if ((*response)->header_size == -1) {
-        char *header_end = strstr(response_string, "\r\n\r\n");
-        if (header_end != NULL) {
-            (*response)->header_size = header_end - response_string + 4;
-        } else {
-            (*response)->header_size = -1;
-        }
-    }
-
-    // data size
-    if ((*response)->response_content_length == -1) {
-        char *content_length_ptr = get_content_length_ptr(response_string);
-
-        if (content_length_ptr != NULL) {
-            (*response)->response_content_length = atoi(content_length_ptr + 16);
-        } else if (strstr(response_string, "\r\n\r\n") != NULL) {
-            (*response)->response_content_length = 0;
-        } else {
-            (*response)->response_content_length = -1;
-        }
-    }
-}
-
-void read_existing_server_response(server_response **existing_response, char *next_part_of_response_string) {
-
-    char *new_response_string = malloc(strlen((*existing_response)->response_string) + strlen(next_part_of_response_string) + 1);
-
-    strcpy(new_response_string, (*existing_response)->response_string);
-    strcat(new_response_string, next_part_of_response_string);
-
-    new_response_string[strlen((*existing_response)->response_string) + strlen(next_part_of_response_string)] = '\0';
-    free((*existing_response)->response_string);
-    (*existing_response)->response_string = new_response_string;
-
-    // printf("Current response length: %lu\n", strlen((*existing_response)->response_string));
-
-    if ((*existing_response)->response_content_length == -1 || (*existing_response)->header_size == -1) {
-        get_response_content_length(existing_response);
-    }
-}
-
-
-bool server_response_is_complete(server_response *response) {
-    if (response->response_content_length == -1) {
-        return false;
-    }
-
-    if (response->response_content_length == 0) {
         return true;
-    }
-
-    return strlen(response->response_string) >= (unsigned) (response->response_content_length + response->header_size);
-}
-
-char *read_server_response(int cache_fd, struct sockaddr_un *cache_server_addr, socklen_t *cache_server_len) {
-    char buffer[BUFFER_SIZE];
-    int n = recvfrom(cache_fd, buffer, BUFFER_SIZE, 0, (struct sockaddr *) cache_server_addr, (socklen_t *) cache_server_len);
-    if (n < 0) {
-        error("ERROR reading from server");
-    }
-    if (n == 0) {
-        printf("Server closed connection\n");
-    }
-
-    printf("\n\n\nBuffer from server:\n%s\n", buffer);
-
-    char *response = malloc(n + 1);
-    assert(response != NULL);
-    strncpy(response, buffer, n);
-    response[n] = '\0';
-
-    return response;
-}
-
-void respond_to_client(server_response *res, Node *ssl_contexts) {
-    char *response = res->response_string;
-    int response_size = strlen(response);
-
-    Context_T *curr_context = get_ssl_context(ssl_contexts, res->filedes);
-    int n = SSL_write(curr_context->ssl, response, response_size);
-    if (n <= 0) {
-        ERR_print_errors_fp(stderr); // Print SSL error details
-        error("Something bad happened during SSL_write");
+    }  else {
+        int ssl_error = SSL_get_error(curr_context->server_ssl, read_n);
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+            // Need to retry the operation later
+            return true; // Keep the connection open
+        } else {
+            // Handle other errors
+            // printf("\nClient FD: %d\n", curr_context->server_fd);
+            // printf("SSL_read failed with error code %d\n", ssl_error);
+            return false; // Close the connection
+        }
     }
 }
+
+int client_or_server_fd(Node *ssl_contexts, int fd) {
+    if (get_ssl_context_by_client_fd(ssl_contexts, fd) != NULL) {
+        return CLIENT_FD;
+    } else if (get_ssl_context_by_server_fd(ssl_contexts, fd) != NULL) {
+        return SERVER_FD;
+    } else {
+        return NO_FD_ASSOCIATION;
+    }
+}
+
+void set_max_fd(int new_fd, int *max_fd) {
+    // if (new_fd == 0) {
+    //     printf("\nNew FD is 0\n");
+    // }
+    if (new_fd + 1 > *max_fd) {
+        *max_fd = new_fd + 1;
+    }
+}
+
+
+// int get_header_length(char *buff) {
+//     char *header_end = strstr(buff, "\r\n\r\n");
+//     if (header_end == NULL) {
+//         return -1;
+//     }
+
+//     return header_end - buff + 4;
+// }
+
+// int get_content_length(char *buff) {
+//     // Find the size of the request data
+//     char *content_length_ptr = get_content_length_ptr(buff);
+
+//     if (content_length_ptr != NULL) {
+//         return atoi(content_length_ptr + 16);
+//     } else {
+//         return 0;
+//     }
+// }
+
+// char *get_content_length_ptr(char *str) {
+//     assert(str != NULL);
+//     char *content_length = strstr(str, "Content-Length: ");
+//     if (content_length == NULL) {
+//         content_length = strstr(str, "content-length: ");
+//     }
+
+//     if (content_length == NULL) {
+//         content_length = strstr(str, "Content-length: ");
+//     }
+
+//     if (content_length == NULL) {
+//         content_length = strstr(str, "content-Length: ");
+//     }
+
+//     if (content_length == NULL) {
+//         content_length = strstr(str, "CONTENT-LENGTH: ");
+//     }
+
+//     return content_length;
+// }

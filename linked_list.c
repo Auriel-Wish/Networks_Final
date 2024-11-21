@@ -68,34 +68,22 @@ void freeList(Node *head) {
     }
 }
 
-Context_T *get_ssl_context(Node *head, int filedes) {
+Context_T *get_ssl_context_by_client_fd(Node *head, int client_fd) {
     for (Node *curr = head; curr != NULL; curr = curr->next) {
         Context_T *curr_context = curr->data;
-        if (curr_context->filedes == filedes) {
+        if (curr_context->client_fd == client_fd) {
             return curr_context;
         }
     }
     return NULL;
 }
 
-client_request *get_client_request(Node *head, int filedes) {
+Context_T *get_ssl_context_by_server_fd(Node *head, int server_fd) {
     for (Node *curr = head; curr != NULL; curr = curr->next) {
-        client_request *curr_request = curr->data;
-        if (curr_request->filedes == filedes) {
-            return curr_request;
-        }
-    }
-
-    return NULL;
-}
-
-server_response *get_server_response(Node *head, int filedes) {
-    for (Node *curr = head; curr != NULL; curr = curr->next) {
-        server_response *curr_response = curr->data;
-        if (curr_response->filedes == filedes) {
-            return curr_response;
+        Context_T *curr_context = curr->data;
+        if (curr_context->server_fd == server_fd) {
+            return curr_context;
         }
     }
     return NULL;
 }
-

@@ -1,47 +1,25 @@
 #include "linked_list.h"
 
 #define BUFFER_SIZE 4096
-#define GET_REQUEST 1
-#define CONNECT_REQUEST 0
-#define POST_REQUEST 2
 
-typedef struct {
-    int placeholder;
-    char *buffer;
-    unsigned size;
-} Dispatch_T;
+#define CLIENT_FD 0
+#define SERVER_FD 1
+#define NO_FD_ASSOCIATION 2
 
-// typedef struct __attribute__((__packed__)) {
-//     uint32_t size_of_request;
-//     char *hostname;
-//     int portno;
-//     char *request_string;
-// } HTTPS_REQ_T;
+bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd);
 
-Dispatch_T* new_dispatch();
+int client_or_server_fd(Node *ssl_contexts, int fd);
 
-void free_dispatch(Dispatch_T **dispatch);
+bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd);
 
-client_request *read_new_client_request(int fd, Node **ssl_contexts, Context_T *curr_context);
+void set_max_fd(int new_fd, int *max_fd);
 
-void respond_to_client(server_response *res, Node *ssl_contexts);
+// int get_content_length(char *buff);
 
-int get_post_request_data_size(char *buffer);
+// int get_header_length(char *buff);
 
-void read_existing_incomplete_client_request(client_request **incomplete_request, Context_T *curr_context);
+bool read_server_response(int server_fd, Node **ssl_contexts);
 
-bool req_is_complete(client_request *req);
+// char *get_content_length_ptr(char *str);
 
-void send_request_to_cache(client_request *req, int cache_fd, int port, struct sockaddr_un *cache_server_addr, socklen_t cache_server_len);
-
-char *read_server_response(int cache_fd, struct sockaddr_un *cache_server_addr, socklen_t *cache_server_len);
-
-server_response *read_new_server_response(char *response_string, int fd);
-
-void get_response_content_length(server_response **response);
-
-void read_existing_server_response(server_response **existing_response, char *next_part_of_response_string);
-
-bool server_response_is_complete(server_response *response);
-
-char *get_content_length_ptr(char *str);
+void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context);

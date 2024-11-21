@@ -10,36 +10,32 @@ typedef struct Node {
 } Node;
 
 typedef struct {
-    int filedes;
-    SSL *ssl;
-    char *hostname;
-    int port;
+    // bool response_complete;
+    // int response_content_length;
+    // int response_header_length;
+    // int response_total_size;
+
+    int client_fd;
+    int server_fd;
+    SSL *client_ssl;
+    SSL *server_ssl;
 } Context_T;
 
-typedef struct {
-    char req_type;
-    int request_data_size;
+// typedef struct {
+//     int filedes;
 
-    int filedes;
-    char *request_string;
-    bool request_complete;
-} client_request;
+//     char msg_type;
+//     int header_length;
+//     int content_length;
+//     int total_msg_size;
 
-typedef struct {
-    int filedes;
-    
-    int header_size;
-    int response_content_length;
-    
-    char *response_string;
-    bool response_complete;
-} server_response;
+//     unsigned char *msg_data;
+//     bool msg_complete;
+// } message;
 
 void append(Node **head, void *data);
 void removeNode(Node **head, void *data);
 void freeList(Node *head);
 
-Context_T *get_ssl_context(Node *head, int filedes);
-
-client_request *get_client_request(Node *head, int filedes);
-server_response *get_server_response(Node *head, int filedes);
+Context_T *get_ssl_context_by_client_fd(Node *head, int client_fd);
+Context_T *get_ssl_context_by_server_fd(Node *head, int server_fd);
