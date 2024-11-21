@@ -13,7 +13,7 @@ a.out: $(obj)
 
 .PHONY: clean
 clean:
-	rm -f $(obj) a.out *.txt *.*.crt *.*.key *.html
+	rm -f $(obj) a.out *.txt *.*.crt *.*.key *.html *.srl
 
 
 # Server version

@@ -81,7 +81,7 @@ int main(int argc, char **argv)
 
     SSL_library_init();
     SSL_load_error_strings();
-    OpenSSL_add_ssl_algorithms();
+    OpenSSL_add_all_algorithms();
 
     while (true) {
         read_fd_set = active_read_fd_set;
@@ -91,11 +91,11 @@ int main(int argc, char **argv)
             perror("ERROR with select");
             exit(EXIT_FAILURE);
         }
-        printf("Selected\n");
+        // printf("Selected\n");
 
         /* Service all sockets with input pending */
         for (int i = 0; i < max_fd; ++i) {
-            printf("Checking socket %d\n", i);
+            // printf("Checking socket %d\n", i);
             /* READING sockets */
             if (FD_ISSET(i, &read_fd_set)) {
                 if (i == parentfd) {

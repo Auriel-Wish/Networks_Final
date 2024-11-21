@@ -20,11 +20,6 @@ void error(char *msg)
     exit(0);
 }
 
-void initialize_openssl() {
-    SSL_load_error_strings();
-    OpenSSL_add_ssl_algorithms();
-}
-
 SSL_CTX *create_ssl_context() {
     const SSL_METHOD *method = TLS_server_method(); // Use the TLS server method
     SSL_CTX *ctx = SSL_CTX_new(method);
@@ -36,6 +31,42 @@ SSL_CTX *create_ssl_context() {
     return ctx;
 }
 
+// void generate_certificates(const char *hostname) {
+//     char command[1024];
+
+//     // Generate a private key for the hostname
+//     snprintf(command, sizeof(command), "openssl genpkey -algorithm RSA -out %s.key -pkeyopt rsa_keygen_bits:2048 > /dev/null 2>&1", hostname);
+//     system(command);
+
+//     // Create a temporary OpenSSL configuration file to specify SAN for the CSR
+//     snprintf(command, sizeof(command), 
+//         "echo \"[ req ]\n"
+//         "default_bits = 2048\n"
+//         "distinguished_name = req_distinguished_name\n"
+//         "req_extensions = v3_req\n"
+//         "[ req_distinguished_name ]\n"
+//         "[ v3_req ]\n"
+//         "subjectAltName = @alt_names\n"
+//         "[ alt_names ]\n"
+//         "DNS.1 = %s\" > %s.cnf", 
+//         hostname, hostname);
+//     system(command);
+
+//     // Generate a CSR using the private key and include SAN from the configuration
+//     snprintf(command, sizeof(command), "openssl req -new -key %s.key -out %s.csr -subj \"/CN=%s\" -config %s.cnf > /dev/null 2>&1", hostname, hostname, hostname, hostname);
+//     system(command);
+
+//     // Generate the certificate signed by the CA (using Networks_Final_Project.key and Networks_Final_Project.crt)
+//     snprintf(command, sizeof(command), "openssl x509 -req -in %s.csr -CA Networks_Final_Project.crt -CAkey Networks_Final_Project.key -CAcreateserial -out %s.crt -days 365 -sha256 -extfile %s.cnf -extensions v3_req > /dev/null 2>&1", hostname, hostname, hostname);
+//     system(command);
+
+//     // Clean up CSR and temporary configuration file after signing
+//     snprintf(command, sizeof(command), "rm %s.csr %s.cnf > /dev/null 2>&1", hostname, hostname);
+//     system(command);
+
+//     printf("Generated %s.key and %s.crt signed by Networks_Final_Project with SAN.\n\n\n\n", hostname, hostname);
+// }
+
 void generate_certificates(const char *hostname) {
     char command[1024];
 
@@ -43,7 +74,7 @@ void generate_certificates(const char *hostname) {
     snprintf(command, sizeof(command), "openssl genpkey -algorithm RSA -out %s.key -pkeyopt rsa_keygen_bits:2048 > /dev/null 2>&1", hostname);
     system(command);
 
-    // Create a temporary OpenSSL configuration file to specify SAN for the CSR
+    // Create a temporary OpenSSL configuration file to specify SAN, Key Usage, and EKU for the CSR
     snprintf(command, sizeof(command), 
         "echo \"[ req ]\n"
         "default_bits = 2048\n"
@@ -52,12 +83,14 @@ void generate_certificates(const char *hostname) {
         "[ req_distinguished_name ]\n"
         "[ v3_req ]\n"
         "subjectAltName = @alt_names\n"
+        "keyUsage = critical, digitalSignature, keyEncipherment\n"
+        "extendedKeyUsage = serverAuth\n"
         "[ alt_names ]\n"
         "DNS.1 = %s\" > %s.cnf", 
         hostname, hostname);
     system(command);
 
-    // Generate a CSR using the private key and include SAN from the configuration
+    // Generate a CSR using the private key and include SAN, Key Usage, and EKU from the configuration
     snprintf(command, sizeof(command), "openssl req -new -key %s.key -out %s.csr -subj \"/CN=%s\" -config %s.cnf > /dev/null 2>&1", hostname, hostname, hostname, hostname);
     system(command);
 
@@ -69,7 +102,7 @@ void generate_certificates(const char *hostname) {
     snprintf(command, sizeof(command), "rm %s.csr %s.cnf > /dev/null 2>&1", hostname, hostname);
     system(command);
 
-    printf("Generated %s.key and %s.crt signed by Networks_Final_Project with SAN.\n\n\n\n", hostname, hostname);
+    printf("Generated %s.key and %s.crt signed by Networks_Final_Project with SAN, Key Usage, and EKU.\n", hostname, hostname);
 }
 
 void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
@@ -110,7 +143,6 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
     int nbytes;
 
     nbytes = read(fd, buffer, BUFFER_SIZE - 1);
-    printf("\nNBYTES: %d\n", nbytes);
     if (nbytes <= 0) {
         return false;
     }
@@ -123,7 +155,6 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
         char *hostname = strtok(buffer + 8, ":");
         
         SSL_CTX *ctx;
-        initialize_openssl();
         ctx = create_ssl_context();
         configure_ssl_context(ctx, hostname);
         
@@ -154,7 +185,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
             close(fd);
             return false;
         }
-        printf("\nSSL handshake successful\n");
+        printf("\nSSL handshake with client successful\n");
 
         int port = atoi(strtok(NULL, " "));
         open_new_conn_to_server(hostname, port, &new_context);
@@ -177,11 +208,14 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 }
 
 void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context) {
-    printf("Opening connection to %s:%d\n", hostname, port);
+    printf("\nOpening connection to %s:%d\n", hostname, port);
 
-    // Create SSL context
-    const SSL_METHOD *method = SSLv23_client_method();
+    // Use the TLS client method
+    const SSL_METHOD *method = TLS_client_method();
     SSL_CTX *ctx = SSL_CTX_new(method);
+    
+    // Set SSL context options
+    SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
@@ -215,6 +249,15 @@ void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context)
     }
 
     SSL_set_fd(server_ssl, server_fd);
+
+    // Set the SNI hostname
+    if (!SSL_set_tlsext_host_name(server_ssl, hostname)) {
+        fprintf(stderr, "Error setting SNI hostname.\n");
+        ERR_print_errors_fp(stderr);
+        SSL_free(server_ssl);
+        close(server_fd);
+        return;
+    }
 
     // Perform the TLS handshake
     if (SSL_connect(server_ssl) <= 0) {
