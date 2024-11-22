@@ -74,6 +74,8 @@ int main(int argc, char **argv)
 
     Node *ssl_contexts = NULL;
 
+    Cache_T *cache = create_cache(20); // setting capacity to be small for now
+
     /* Initialize the set of active sockets */
     FD_ZERO(&active_read_fd_set);
     FD_SET(parentfd, &active_read_fd_set);
@@ -147,7 +149,7 @@ int main(int argc, char **argv)
                 
                 else {
                     printf("\nReading from client %d\n", i);
-                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd)) {
+                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, cache)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 }

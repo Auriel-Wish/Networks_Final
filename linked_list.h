@@ -19,6 +19,8 @@ typedef struct {
     int server_fd;
     SSL *client_ssl;
     SSL *server_ssl;
+
+    char *hostname;
 } Context_T;
 
 // typedef struct {

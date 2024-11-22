@@ -1,4 +1,5 @@
 #include "linked_list.h"
+#include "cache.h"
 
 #define BUFFER_SIZE 65536 //64KB
 
@@ -6,7 +7,7 @@
 #define SERVER_FD 1
 #define NO_FD_ASSOCIATION 2
 
-bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd);
+bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd, Cache_T *cache);
 
 int client_or_server_fd(Node *ssl_contexts, int fd);
 
