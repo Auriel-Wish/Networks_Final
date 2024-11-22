@@ -1,6 +1,6 @@
 #include "linked_list.h"
 
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 65536 //64KB
 
 #define CLIENT_FD 0
 #define SERVER_FD 1

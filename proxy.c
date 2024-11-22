@@ -15,8 +15,8 @@
 #include <assert.h>
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
-#define TIMEOUT_S 0
-#define TIMEOUT_US 100000
+#define TIMEOUT_S 10
+#define TIMEOUT_US 0
 
 void client_disconnect(int client_filedes, Node **ssl_contexts, fd_set *active_read_fd_set);
 
@@ -86,10 +86,14 @@ int main(int argc, char **argv)
     while (true) {
         read_fd_set = active_read_fd_set;
 
-        if (select(max_fd, &read_fd_set, NULL, NULL, NULL) < 0) {
+        fprintf(stderr, "SELECT blocking...");
+
+        if (select(max_fd, &read_fd_set, NULL, NULL, &TIMEOUT) < 0) {
             perror("ERROR with select");
             continue;
         }
+
+        fprintf(stderr, "DONE blocking\n");
 
         /* Service all sockets with input pending */
         for (int i = 0; i < max_fd; ++i) {
@@ -123,24 +127,37 @@ int main(int argc, char **argv)
                         perror("Error on inet_ntoa");
                     }
 
-                    // printf("Server established connection with %s (%s)\n\n",
-                    //     hostp->h_name, hostaddrp);
+                    printf("Server established connection with %s (%s)\n\n",
+                        hostp->h_name, hostaddrp);
 
                     /* Adding new connection request to active socket set */
                     FD_SET(new_fd, &active_read_fd_set);
                     set_max_fd(new_fd, &max_fd);
                 }
+
+                // Couldn't this be an issue if there were multiple servers 
+                // that we were connected to at the same time?
+
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
-                    // printf("\nReading from server: %d\n", i);
+                    printf("\nReading from server: %d\n", i);
                     if (!read_server_response(i, &ssl_contexts)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
-                } else /*if (client_or_server_fd(ssl_contexts, i) == CLIENT_FD)*/ {
-                    // printf("\nReading from client %d\n", i);
+                } 
+                
+                else {
+                    printf("\nReading from client %d\n", i);
                     if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 }
+
+                // else {
+                    //if (client_or_server_fd(ssl_contexts, i) == CLIENT_FD)
+                //     // fprintf(stderr, "No fd association\n");
+                //     // assert(false);
+                // }
+
             }
         }
     }
@@ -149,16 +166,23 @@ int main(int argc, char **argv)
 }
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
-    fprintf(stderr, "DISCONNECTING THE CLIENT: %d\n", filedes);
+    fprintf(stderr, "DISCONNECTING THE CLIENT: %d...", filedes);
+
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
+    
     if (curr_context == NULL) {
         curr_context = get_ssl_context_by_server_fd(*ssl_contexts, filedes);
     }
+
     if (curr_context == NULL) {
         printf("No context found for file descriptor %d\n", filedes);
         return;
     }
+
+    FD_CLR(curr_context->client_fd, active_read_fd_set);
+    FD_CLR(curr_context->server_fd, active_read_fd_set);
+
     SSL_shutdown(curr_context->client_ssl);
     SSL_free(curr_context->client_ssl);
     SSL_shutdown(curr_context->server_ssl);
@@ -166,7 +190,7 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     close(curr_context->client_fd);
     close(curr_context->server_fd);
 
-    FD_CLR(curr_context->client_fd, active_read_fd_set);
-    FD_CLR(curr_context->server_fd, active_read_fd_set);
     removeNode(ssl_contexts, curr_context);
+
+    fprintf(stderr, " COMPLETE\n");
 }
