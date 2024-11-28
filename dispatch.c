@@ -195,6 +195,10 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
         new_context->client_fd = fd;
         new_context->client_ssl = client_ssl;
 
+        new_context->hostname = calloc(strlen(hostname) + 1, sizeof(char));
+        assert(new_context->hostname != NULL);
+        strcpy(new_context->hostname, hostname);
+
         new_context->server_fd = -1;
         new_context->server_ssl = NULL;
 
@@ -237,8 +241,11 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 }
 
 
-bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd) {
+bool read_client_request(int client_fd, Node **ssl_contexts, 
+    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache) {
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, client_fd);
+
+    (void)cache;
     
     if (curr_context == NULL) {
         /* No SSL Context associated with this file descriptor */
@@ -246,7 +253,14 @@ bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read
         // read HTTP CONNECT (should be a connect)
         // setup SSL connection, adds to FD -> SSL mapping
         return handle_connect_request(client_fd, ssl_contexts, active_read_fd_set, max_fd);
-    } 
+    }
+
+    // // check the cache to see if the content is present:
+    // Cache_Response_T *resp = get_response_from_cache(cache, curr_context->hostname);
+
+    // if (resp != NULL) {
+    //     // SSL_write(curr_context->)
+    // }
     
     else {
         // printf("Reading ONE client request\n");
