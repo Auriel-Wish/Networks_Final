@@ -86,14 +86,14 @@ int main(int argc, char **argv)
     while (true) {
         read_fd_set = active_read_fd_set;
 
-        fprintf(stderr, "SELECT blocking...");
+        // fprintf(stderr, "SELECT blocking...");
 
         if (select(max_fd, &read_fd_set, NULL, NULL, &TIMEOUT) < 0) {
             perror("ERROR with select");
             continue;
         }
 
-        fprintf(stderr, "DONE blocking\n");
+        // fprintf(stderr, "DONE blocking\n");
 
         /* Service all sockets with input pending */
         for (int i = 0; i < max_fd; ++i) {
@@ -127,8 +127,7 @@ int main(int argc, char **argv)
                         perror("Error on inet_ntoa");
                     }
 
-                    printf("Server established connection with %s (%s)\n\n",
-                        hostp->h_name, hostaddrp);
+                    // printf("Server established connection with %s (%s)\n\n", hostp->h_name, hostaddrp);
 
                     /* Adding new connection request to active socket set */
                     FD_SET(new_fd, &active_read_fd_set);
@@ -139,14 +138,14 @@ int main(int argc, char **argv)
                 // that we were connected to at the same time?
 
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
-                    printf("\nReading from server: %d\n", i);
+                    // printf("\nReading from server: %d\n", i);
                     if (!read_server_response(i, &ssl_contexts)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 } 
                 
                 else {
-                    printf("\nReading from client %d\n", i);
+                    // printf("\nReading from client %d\n", i);
                     if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
@@ -166,7 +165,7 @@ int main(int argc, char **argv)
 }
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
-    fprintf(stderr, "DISCONNECTING THE CLIENT: %d...", filedes);
+    // fprintf(stderr, "DISCONNECTING THE CLIENT: %d...", filedes);
 
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
@@ -176,8 +175,20 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     }
 
     if (curr_context == NULL) {
-        printf("No context found for file descriptor %d\n", filedes);
+        // printf("No context found for file descriptor %d\n", filedes);
         return;
+    }
+
+    const char *hostname = SSL_get_servername(curr_context->server_ssl, TLSEXT_NAMETYPE_host_name);
+    if (hostname != NULL) {
+        char filename[256];
+        snprintf(filename, sizeof(filename), "%s.crt", hostname);
+        remove(filename);
+        // if (remove(filename) == 0) {
+        //     printf("Deleted certificate file: %s\n", filename);
+        // } else {
+        //     printf("Error deleting certificate file");
+        // }
     }
 
     FD_CLR(curr_context->client_fd, active_read_fd_set);
@@ -192,5 +203,5 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
 
     removeNode(ssl_contexts, curr_context);
 
-    fprintf(stderr, " COMPLETE\n");
+    // fprintf(stderr, " COMPLETE\n");
 }

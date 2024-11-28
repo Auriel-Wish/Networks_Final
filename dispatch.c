@@ -60,7 +60,7 @@ void generate_certificates(const char *hostname) {
     snprintf(command, sizeof(command), "rm %s.csr %s.cnf > /dev/null 2>&1", hostname, hostname);
     system(command);
 
-    printf("Generated %s.key and %s.crt signed by Networks_Final_Project with SAN, Key Usage, and EKU.\n", hostname, hostname);
+    // printf("Generated %s.key and %s.crt signed by Networks_Final_Project with SAN, Key Usage, and EKU.\n", hostname, hostname);
 }
 
 void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
@@ -95,7 +95,7 @@ void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
 }
 
 void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context) {
-    printf("\nConnecting to %s:%d..", hostname, port);
+    // printf("\nConnecting to %s:%d..", hostname, port);
 
     // Use the TLS client method
     const SSL_METHOD *method = TLS_client_method();
@@ -148,7 +148,7 @@ void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context)
 
     // Perform the TLS handshake
     if (SSL_connect(server_ssl) <= 0) {
-        printf("SSL connection failed\n");
+        // printf("SSL connection failed\n");
         ERR_print_errors_fp(stderr);
         SSL_free(server_ssl);
         close(server_fd);
@@ -158,7 +158,7 @@ void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context)
     (*curr_context)->server_fd = server_fd;
     (*curr_context)->server_ssl = server_ssl;
 
-    printf("CONNECTED\n");
+    // printf("CONNECTED\n");
 }
 
 bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd) {
@@ -204,7 +204,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(client_ssl) <= 0) {
-            printf("\nSSL handshake failed\n");
+            // printf("\nSSL handshake failed\n");
             ERR_print_errors_fp(stderr);
             SSL_shutdown(client_ssl);
             SSL_free(client_ssl);
@@ -212,7 +212,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
             return false;
         }
 
-        printf("\nSSL handshake with client successful\n");
+        // printf("\nSSL handshake with client successful\n");
 
         int port = atoi(strtok(NULL, " "));
         open_new_conn_to_server(hostname, port, &new_context);
@@ -227,7 +227,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
     } 
     
     else {
-        printf("Not a CONNECT request\n");
+        // printf("Not a CONNECT request\n");
         
         for (int i = 0; i < nbytes; i++) {
             putchar(buffer[i]);
@@ -249,7 +249,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read
     } 
     
     else {
-        printf("Reading ONE client request\n");
+        // printf("Reading ONE client request\n");
         char buffer[BUFFER_SIZE + 1];
         int n;
 
@@ -259,11 +259,11 @@ bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read
         if (n > 0) {
             n = SSL_write(curr_context->server_ssl, buffer, n);
             if (n == 0) {
-                printf("Server closed connection\n");
+                // printf("Server closed connection\n");
                 return false;
             }
             if (n < 0) {
-                printf("Error writing to server\n");
+                // printf("Error writing to server\n");
                 return false;
             }
 
@@ -293,15 +293,15 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
     char buffer[BUFFER_SIZE + 1];
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
 
-    fprintf(stderr, "READING SERVER RESPONSE: %d bytes...", read_n);
+    // fprintf(stderr, "READING SERVER RESPONSE: %d bytes...", read_n);
 
-    
 
     if (read_n > 0) {
         buffer[read_n] = '\0';
 
+        printf("%s", buffer);
+
         /*
-        printf("\n\nServer response: %s\n", buffer);
         if (curr_context->response_header_length == -1) {
             curr_context->response_header_length = get_header_length(buffer, n);
             if (curr_context->response_header_length != -1) {
@@ -314,19 +314,19 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
         while (total_written < read_n) {
             int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
             if (write_n <= 0) {
-                printf("Error writing to client\n");
+                // printf("Error writing to client\n");
                 return false;
             }
             total_written += write_n;
         }
 
-        fprintf(stderr, "DONE\n");
+        // fprintf(stderr, "DONE\n");
 
         return true;
     }  
     
     else {
-        fprintf(stderr, "ERROR\n");
+        // fprintf(stderr, "ERROR\n");
 
         int ssl_error = SSL_get_error(curr_context->server_ssl, read_n);
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
