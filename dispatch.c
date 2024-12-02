@@ -275,6 +275,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         n = SSL_read(curr_context->client_ssl, buffer, BUFFER_SIZE);
         
         if (n > 0) {
+            // OLD method for finding header:
             // // Locate the Accept-Encoding header
             // char *accept_encoding = strstr(buffer, "Accept-Encoding:");
             // if (accept_encoding) {
@@ -328,7 +329,6 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
 
             // fprintf(stderr, "Printing out the HEADER\n");
             // print_buffer(buffer, n);
-
 
             n = SSL_write(curr_context->server_ssl, buffer, n);
             if (n == 0) {
@@ -407,69 +407,66 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
         buffer[read_n] = '\0';
 
-        // Look for the end of a header
-        char *header_end = strstr(buffer, "\r\n\r\n");
-
-        
-        if (header_end != NULL) {
-            printf("\nFOUND A HEADER\n");
-        } else {
-            printf("\nFOUND A BODY\n");
-            decompress_and_print(buffer, read_n);
-        }
-
-        fprintf(stderr, "READING SERVER RESPONSE:\n");
-        print_buffer(buffer, read_n -1);
-
-        // message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
-        // curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
-        // if (curr_message->msg_complete) {
-        //     printf("Message is complete FROM SERVER\n");
-        //     // print_buffer((char *) curr_message->content, curr_message->content_length);
-        //     inject_script_into_html(curr_message);
-
-        //     write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
-        //     if (write_n <= 0) {
-        //         return false;
-        //     }
-        //     if (curr_message->content_length > 0) {
-        //         write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
-        //     }
-        //     if (write_n <= 0) {
-        //         return false;
-        //     }
-
-        //     removeNode(all_messages, curr_message);
+        // // NOTE: Working version
+        // char *header_end = strstr(buffer, "\r\n\r\n");
+        // if (header_end != NULL) {
+        //     printf("\nFOUND A HEADER\n");
+        // } else {
+        //     printf("\nFOUND A BODY\n");
+        //     decompress_and_print(buffer, read_n);
         // }
 
-        
-        // int write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
-        // if (write_n <= 0) {
-        //     return false;
+        // fprintf(stderr, "READING SERVER RESPONSE:\n");
+        // print_buffer(buffer, read_n -1);
+
+        // int total_written = 0;
+        // while (total_written < read_n) {
+        //     int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
+        //     if (write_n <= 0) {
+        //         // printf("Error writing to client\n");
+        //         return false;
+        //     }
+        //     total_written += write_n;
         // }
 
-        // printf("%s", buffer);
+        // Experimental Version
+        // Needs to differentiate between headers and bodies
+        message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
+        curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
+        if (curr_message->msg_complete) {
+            printf("Message is complete FROM SERVER\n");
+            // RAW message content
+            // print_buffer((char *) curr_message->content, curr_message->content_length);
 
-        /*
-        if (curr_context->response_header_length == -1) {
-            curr_context->response_header_length = get_header_length(buffer, n);
-            if (curr_context->response_header_length != -1) {
-                curr_context->response_content_length = get_content_length(buffer, n);
-            }
-        }
-        */
-        
-        int total_written = 0;
-        while (total_written < read_n) {
-            int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
+            // DECOMPRESSED message content
+            decompress_and_print((char *) curr_message->content, curr_message->content_length);
+
+
+            // char *header_end = strstr((char *) curr_message->content, "\r\n\r\n");
+            // if (header_end != NULL) {
+            //     printf("\nFOUND A HEADER\n");
+            //     printf("%s\n", (char *) curr_message->content);
+            // } else {
+            //     printf("\nFOUND A BODY\n");
+            //     decompress_and_print((char *) curr_message->content, curr_message->content_length);
+            // }
+
+            // NOTE: This does not work right now. Add this back in when Auriel fixes it.
+            // inject_script_into_html(curr_message);
+
+            write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
             if (write_n <= 0) {
-                // printf("Error writing to client\n");
                 return false;
             }
-            total_written += write_n;
-        }
+            if (curr_message->content_length > 0) {
+                write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
+            }
+            if (write_n <= 0) {
+                return false;
+            }
 
-        // fprintf(stderr, "DONE\n");
+            removeNode(all_messages, curr_message);
+        }
 
         return true;
     }  
@@ -581,22 +578,6 @@ void set_max_fd(int new_fd, int *max_fd) {
     }
 }
 
-// char *reverse_strstr(char *haystack, const char *needle) {
-//     if (!*needle) {
-//         return (char *)haystack;
-//     }
-
-//     char *result = NULL;
-//     char *current;
-
-//     while ((current = strstr(haystack, needle)) != NULL) {
-//         result = current;
-//         haystack = current + 1;
-//     }
-
-//     return result;
-// }
-
 void inject_script_into_html(message *msg) {
     const char *body_tag = "</body>";
     char *pos = strstr((const char *) msg->content, body_tag);
@@ -661,26 +642,6 @@ void inject_script_into_html(message *msg) {
 
 
 
-// int get_header_length(char *buff) {
-//     char *header_end = strstr(buff, "\r\n\r\n");
-//     if (header_end == NULL) {
-//         return -1;
-//     }
-
-//     return header_end - buff + 4;
-// }
-
-// int get_content_length(char *buff) {
-//     // Find the size of the request data
-//     char *content_length_ptr = get_content_length_ptr(buff);
-
-//     if (content_length_ptr != NULL) {
-//         return atoi(content_length_ptr + 16);
-//     } else {
-//         return 0;
-//     }
-// }
-
 char *get_content_length_ptr(char *str) {
     assert(str != NULL);
     char *content_length = strstr(str, "Content-Length: ");
@@ -723,3 +684,39 @@ void print_buffer(char *m, unsigned size)
         printf("\n");
     }
 }
+
+// int get_header_length(char *buff) {
+//     char *header_end = strstr(buff, "\r\n\r\n");
+//     if (header_end == NULL) {
+//         return -1;
+//     }
+
+//     return header_end - buff + 4;
+// }
+
+// int get_content_length(char *buff) {
+//     // Find the size of the request data
+//     char *content_length_ptr = get_content_length_ptr(buff);
+
+//     if (content_length_ptr != NULL) {
+//         return atoi(content_length_ptr + 16);
+//     } else {
+//         return 0;
+//     }
+// }
+
+// char *reverse_strstr(char *haystack, const char *needle) {
+//     if (!*needle) {
+//         return (char *)haystack;
+//     }
+
+//     char *result = NULL;
+//     char *current;
+
+//     while ((current = strstr(haystack, needle)) != NULL) {
+//         result = current;
+//         haystack = current + 1;
+//     }
+
+//     return result;
+// }
