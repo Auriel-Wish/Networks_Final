@@ -13,6 +13,10 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+#include <zlib.h>
+#define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
+
+
 
 SSL_CTX *create_ssl_context() {
     const SSL_METHOD *method = TLS_server_method(); // Use the TLS server method
@@ -240,11 +244,17 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
     }
 }
 
+char *inject_encoding_method(char *buffer, unsigned size) 
+{
+    (void)buffer;
+    (void)size;
+    return NULL;
+}
 
 bool read_client_request(int client_fd, Node **ssl_contexts, 
-    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache) {
+    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache) 
+{
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, client_fd);
-
     (void)cache;
     
     if (curr_context == NULL) {
@@ -257,10 +267,6 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
 
     // // check the cache to see if the content is present:
     // Cache_Response_T *resp = get_response_from_cache(cache, curr_context->hostname);
-
-    // if (resp != NULL) {
-    //     // SSL_write(curr_context->)
-    // }
     
     else {
         // printf("Reading ONE client request\n");
@@ -271,31 +277,40 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         buffer[n] = '\0';
         
         if (n > 0) {
-            char *accept_encoding = strstr(buffer, "Accept-Encoding: ");
-            if (accept_encoding != NULL) {
+            // Locate the Accept-Encoding header
+            char *accept_encoding = strstr(buffer, "Accept-Encoding:");
+            if (accept_encoding) {
                 char *end_of_line = strstr(accept_encoding, "\r\n");
-                if (end_of_line != NULL) {
-                    size_t prefix_length = accept_encoding - buffer;
-                    size_t suffix_length = strlen(end_of_line);
-                    memmove(accept_encoding, end_of_line, suffix_length + 1);
-                    snprintf(buffer + prefix_length, BUFFER_SIZE - prefix_length, "Accept-Encoding: identity\r\n%s", accept_encoding);
+                if (end_of_line) {
+                    // Replace with "Accept-Encoding: gzip, identity\r\n"
+                    const char *replacement = "Accept-Encoding: gzip, identity\r\n";
+                    int original_line_length = end_of_line - accept_encoding + 2; // Include "\r\n"
+                    int replacement_length = strlen(replacement);
+
+                    // Ensure the replacement fits into the buffer
+                    if (replacement_length <= original_line_length) {
+                        // Directly overwrite the old header
+                        strncpy(accept_encoding, replacement, replacement_length);
+
+                        // Shift remaining data if replacement is shorter
+                        if (replacement_length < original_line_length) {
+                            int shift_amount = original_line_length - replacement_length;
+                            memmove(accept_encoding + replacement_length,
+                                    accept_encoding + original_line_length,
+                                    n - (accept_encoding - buffer) - original_line_length);
+                            n -= shift_amount;
+                        }
+                    } else {
+                        // If the replacement is larger (unlikely), log an error
+                        fprintf(stderr, "Replacement exceeds buffer size!\n");
+                        return false;
+                    }
                 }
             }
 
             fprintf(stderr, "Printing out the HEADER\n");
             print_buffer(buffer, n);
 
-
-            // char *end_of_header = strstr(buffer, "\r\n\r\n");
-            // if (end_of_header != NULL) {
-            //     size_t header_length = end_of_header - buffer;
-            //     size_t new_header_length = header_length + strlen("\r\nAccept-Encoding: identity");
-            //     if (new_header_length < BUFFER_SIZE) {
-            //         memmove(end_of_header + strlen("\r\nAccept-Encoding: identity"), end_of_header, n - header_length);
-            //         memcpy(end_of_header, "\r\nAccept-Encoding: identity", strlen("\r\nAccept-Encoding: identity"));
-            //         n += strlen("\r\nAccept-Encoding: identity");
-            //     }
-            // }
 
             n = SSL_write(curr_context->server_ssl, buffer, n);
             if (n == 0) {
@@ -323,6 +338,35 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     }
 }
 
+void decompress_and_print(const char *compressed_data, size_t compressed_len) {
+    // Buffer for decompressed data
+    char decompressed_data[BUFFER_SIZE * 2]; // Adjust buffer size as needed
+
+    z_stream stream = {0};
+    stream.next_in = (Bytef *)compressed_data;
+    stream.avail_in = compressed_len;
+    stream.next_out = (Bytef *)decompressed_data;
+    stream.avail_out = sizeof(decompressed_data);
+
+    // Initialize for gzip decoding
+    if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
+        fprintf(stderr, "Failed to initialize zlib for gzip decompression\n");
+        return;
+    }
+
+    int result = inflate(&stream, Z_FINISH);
+    inflateEnd(&stream);
+
+    if (result == Z_STREAM_END) {
+        // Successfully decompressed data
+        fprintf(stderr, "Decompressed Content:\n");
+        fwrite(decompressed_data, 1, stream.total_out, stderr);
+        fprintf(stderr, "\n");
+    } else {
+        fprintf(stderr, "Failed to decompress gzip data (error code: %d)\n", result);
+    }
+}
+
 bool read_server_response(int server_fd, Node **ssl_contexts) {
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
     if (curr_context == NULL) {
@@ -336,12 +380,25 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
     // fprintf(stderr, "READING SERVER RESPONSE: %d bytes...", read_n);
 
     // Printing out the server response to prove it has been decrypted
-    // fprintf(stderr, "READING SERVER RESPONSE\n");
-    // print_buffer(buffer, read_n -1);
+
 
 
     if (read_n > 0) {
         buffer[read_n] = '\0';
+
+        // Look for the end of a header
+        char *header_end = strstr(buffer, "\r\n\r\n");
+
+        
+        if (header_end != NULL) {
+            printf("\nFOUND A HEADER\n");
+        } else {
+            printf("\nFOUND A BODY\n");
+            decompress_and_print(buffer, read_n);
+        }
+
+        fprintf(stderr, "READING SERVER RESPONSE:\n");
+        print_buffer(buffer, read_n -1);
 
         // printf("%s", buffer);
 
