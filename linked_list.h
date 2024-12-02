@@ -36,6 +36,15 @@ typedef struct {
 
     bool header_complete;
     bool msg_complete;
+
+    int content_type;
+
+    // Chunked encoding processing state
+    int chunk_state;
+    int chunk_size;
+    int bytes_read_in_chunk;
+    char chunk_size_str[16];
+    int chunk_size_str_index;
 } message;
 
 void append(Node **head, void *data);

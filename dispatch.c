@@ -275,43 +275,21 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         n = SSL_read(curr_context->client_ssl, buffer, BUFFER_SIZE);
         
         if (n > 0) {
-            // OLD method for finding header:
-            // // Locate the Accept-Encoding header
-            // char *accept_encoding = strstr(buffer, "Accept-Encoding:");
-            // if (accept_encoding) {
-            //     char *end_of_line = strstr(accept_encoding, "\r\n");
-            //     if (end_of_line) {
-            //         // Replace with "Accept-Encoding: gzip, identity\r\n"
-            //         const char *replacement = "Accept-Encoding: gzip, identity\r\n";
-            //         int original_line_length = end_of_line - accept_encoding + 2; // Include "\r\n"
-            //         int replacement_length = strlen(replacement);
-
-            //         // Ensure the replacement fits into the buffer
-            //         if (replacement_length <= original_line_length) {
-            //             // Directly overwrite the old header
-            //             strncpy(accept_encoding, replacement, replacement_length);
-
-            //             // Shift remaining data if replacement is shorter
-            //             if (replacement_length < original_line_length) {
-            //                 int shift_amount = original_line_length - replacement_length;
-            //                 memmove(accept_encoding + replacement_length,
-            //                         accept_encoding + original_line_length,
-            //                         n - (accept_encoding - buffer) - original_line_length);
-            //                 n -= shift_amount;
-            //             }
-            //         } else {
-            //             // If the replacement is larger (unlikely), log an error
-            //             fprintf(stderr, "Replacement exceeds buffer size!\n");
-            //             return false;
-            //         }
-            //     }
-            // buffer[n] = '\0';
-
             message *curr_message = get_message_by_filedes(*all_messages, curr_context->client_fd);
             curr_message = insert_new_data(&curr_message, buffer, curr_context->client_fd, all_messages, n);
             if (curr_message->msg_complete) {
-                printf("Message is complete FROM CLIENT\n");
-                // print_buffer((char *) curr_message->content, curr_message->content_length);
+                n = SSL_write(curr_context->server_ssl, curr_message->header, curr_message->header_length);
+                if (n <= 0) {
+                    return false;
+                }
+                if (curr_message->content_length > 0) {
+                    printf("Content length: %d\n", curr_message->content_length);
+                    n = SSL_write(curr_context->server_ssl, curr_message->content, curr_message->content_length);
+                    if (n <= 0) {
+                        return false;
+                    }
+                }
+                
                 removeNode(all_messages, curr_message);
             }
 
@@ -328,17 +306,16 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
             // }
 
             // fprintf(stderr, "Printing out the HEADER\n");
-            // print_buffer(buffer, n);
 
-            n = SSL_write(curr_context->server_ssl, buffer, n);
-            if (n == 0) {
-                // printf("Server closed connection\n");
-                return false;
-            }
-            if (n < 0) {
-                // printf("Error writing to server\n");
-                return false;
-            }
+            // n = SSL_write(curr_context->server_ssl, buffer, n);
+            // if (n == 0) {
+            //     // printf("Server closed connection\n");
+            //     return false;
+            // }
+            // if (n < 0) {
+            //     // printf("Error writing to server\n");
+            //     return false;
+            // }
 
             return true;
         } else {
@@ -356,12 +333,12 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     }
 }
 
-int compress_gzip(const char *content, int content_length, char **compressed, int *compressed_length) {
+int compress_gzip_message_content(message *msg, unsigned char **compressed, int *compressed_length) {
     z_stream strm;
     unsigned char out[CHUNK];
     int ret;
     int have;
-    char *result = NULL;
+    unsigned char *result = NULL;
     int result_size = 0;
 
     // Initialize zlib stream
@@ -375,8 +352,8 @@ int compress_gzip(const char *content, int content_length, char **compressed, in
         return ret;
     }
 
-    strm.avail_in = content_length;
-    strm.next_in = (unsigned char *)content;
+    strm.avail_in = msg->content_length;
+    strm.next_in = msg->content;
 
     do {
         strm.avail_out = CHUNK;
@@ -405,8 +382,8 @@ int compress_gzip(const char *content, int content_length, char **compressed, in
     return Z_OK;
 }
 
-void update_header_content_length(char *header, int header_length, int new_content_length) {
-    char *cl_pos = strstr(header, "Content-Length: ");
+void update_message_header_content_length(message *msg, int new_content_length) {
+    char *cl_pos = strstr(msg->header, "Content-Length: ");
     if (cl_pos) {
         char *line_end = strstr(cl_pos, "\r\n");
         if (line_end) {
@@ -414,76 +391,40 @@ void update_header_content_length(char *header, int header_length, int new_conte
             snprintf(new_value, sizeof(new_value), "Content-Length: %d", new_content_length);
             int new_value_len = strlen(new_value);
             int old_value_len = line_end - cl_pos;
-            memmove(cl_pos + new_value_len, cl_pos + old_value_len, header_length - (cl_pos - header) - old_value_len);
+            memmove(cl_pos + new_value_len, cl_pos + old_value_len, msg->header_length - (cl_pos - msg->header) - old_value_len);
             memcpy(cl_pos, new_value, new_value_len);
+            msg->header_length += new_value_len - old_value_len;  // Adjust the header length
         }
     }
 }
 
-int process_http_response(char *header, int header_length, char *content, int content_length) {
-    char *compressed_content = NULL;
+int process_message(message *msg) {
+    unsigned char *compressed_content = NULL;
     int compressed_length = 0;
 
     // Compress the content
-    int ret = compress_gzip(content, content_length, &compressed_content, &compressed_length);
+    int ret = compress_gzip_message_content(msg, &compressed_content, &compressed_length);
     if (ret != Z_OK) {
         fprintf(stderr, "GZIP compression failed with error code: %d\n", ret);
         return ret;
     }
 
     // Update Content-Length in the header
-    update_header_content_length(header, header_length, compressed_length);
+    update_message_header_content_length(msg, compressed_length);
 
     // Replace content with compressed content
-    memcpy(content, compressed_content, compressed_length);
+    free(msg->content);  // Free the original content
+    msg->content = compressed_content;
+    msg->content_length = compressed_length;
 
-    // Free the compressed content buffer
-    free(compressed_content);
-
-    return compressed_length;
+    return 0;
 }
 
 
-// char *decompress_and_print(const char *compressed_data, size_t compressed_len) {
-//     // Buffer for decompressed data
-//     // char decompressed_data[BUFFER_SIZE * 2]; // Adjust buffer size as needed
-    
-//     // making buffer heap alloc'd
-//     char *decompressed_data = calloc(BUFFER_SIZE * 2, sizeof(char));
-//     assert(decompressed_data != NULL);
-
-//     z_stream stream = {0};
-//     stream.next_in = (Bytef *)compressed_data;
-//     stream.avail_in = compressed_len;
-//     stream.next_out = (Bytef *)decompressed_data;
-//     stream.avail_out = sizeof(decompressed_data);
-
-//     // Initialize for gzip decoding
-//     if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
-//         fprintf(stderr, "Failed to initialize zlib for gzip decompression\n");
-//         return NULL;
-//     }
-
-//     int result = inflate(&stream, Z_FINISH);
-//     inflateEnd(&stream);
-
-//     if (result == Z_STREAM_END) {
-//         // Successfully decompressed data
-//         fprintf(stderr, "Decompressed Content:\n");
-//         fwrite(decompressed_data, 1, stream.total_out, stderr);
-//         fprintf(stderr, "\n");
-//         return decompressed_data;
-
-//     } else {
-//         fprintf(stderr, "Failed to decompress gzip data (error code: %d)\n", result);
-//         return NULL;
-//     }
-// }
-
-void decompress(message *m) {
+bool decompress(message *m) {
     if (m == NULL || m->content == NULL || m->content_length == 0) {
         fprintf(stderr, "Message is null or content is empty. Cannot decompress.\n");
-        return;
+        return false;
     }
 
     // Allocate buffer for decompressed data
@@ -491,7 +432,7 @@ void decompress(message *m) {
     unsigned char *decompressed_content = malloc(decompressed_size);
     if (decompressed_content == NULL) {
         fprintf(stderr, "Failed to allocate memory for decompression.\n");
-        return;
+        return false;
     }
 
     z_stream stream = {0};
@@ -504,7 +445,7 @@ void decompress(message *m) {
     if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
         fprintf(stderr, "Failed to initialize zlib for gzip decompression.\n");
         free(decompressed_content);
-        return;
+        return false;
     }
 
     int result = inflate(&stream, Z_FINISH);
@@ -518,11 +459,12 @@ void decompress(message *m) {
         free(m->content);
         m->content = decompressed_content;
         m->content_length = stream.total_out;
-
+        return true;
     } else {
         // Decompression failed
         fprintf(stderr, "Decompression failed (error code: %d).\n", result);
         free(decompressed_content);
+        return false;
     }
 }
 
@@ -533,20 +475,15 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         return false;
     }
 
-    // char buffer[BUFFER_SIZE];
-    char buffer[BUFFER_SIZE + 1];
+    char buffer[BUFFER_SIZE];
+    // char buffer[BUFFER_SIZE + 1];
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
-
-    // fprintf(stderr, "READING SERVER RESPONSE: %d bytes...", read_n);
-
-    // Printing out the server response to prove it has been decrypted
-
 
 
     if (read_n > 0) {
         int write_n;
 
-        buffer[read_n] = '\0';
+        // buffer[read_n] = '\0';
 
         // // NOTE: Working version
         // char *header_end = strstr(buffer, "\r\n\r\n");
@@ -558,7 +495,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         // }
 
         // fprintf(stderr, "READING SERVER RESPONSE:\n");
-        // print_buffer(buffer, read_n -1);
 
         // int total_written = 0;
         // while (total_written < read_n) {
@@ -575,50 +511,17 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
         curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
         if (curr_message->msg_complete) {
-            printf("Message is complete FROM SERVER\n");
-
-            // RAW message content
-            print_buffer(curr_message->content, curr_message->content_length);
-            printf("Making it past this\n");
-
-            // DECOMPRESSED message content
-            // char *d_msg = decompress_and_print((char *) curr_message->content, curr_message->content_length);
-            decompress(curr_message);
-            inject_script_into_html(curr_message);
-            print_buffer(curr_message->content, curr_message->content_length);
-
-            process_http_response((char *) curr_message->header, curr_message->header_length, (char *) curr_message->content, curr_message->content_length);
-
-
-            
-
-            // if (d_msg != NULL) {
-            //     printf("Injecting new data\n");
+            // bool decompression_succ = decompress(curr_message);
+            // if (decompression_succ) {
+            //     printf("Decompression successful\n");
             //     inject_script_into_html(curr_message);
-            //     // recompress message content
-
-            // } else {
-            //     printf("Nothing recognized\n");
-            //     // do nothing
+            //     process_message(curr_message);
+            //     printf("Header: %s", curr_message->header);
             // }
 
-
-
-
-            // char *header_end = strstr((char *) curr_message->content, "\r\n\r\n");
-            // if (header_end != NULL) {
-            //     printf("\nFOUND A HEADER\n");
-            //     printf("%s\n", (char *) curr_message->content);
-            // } else {
-            //     printf("\nFOUND A BODY\n");
-            //     decompress_and_print((char *) curr_message->content, curr_message->content_length);
-            // }
-
-            // NOTE: This does not work right now. Add this back in when Auriel fixes it.
-            // inject_script_into_html(curr_message);
-            // printf("Header: %s", curr_message->header);
-
-            // printf("Header: %s", curr_message->header);
+            if (curr_message->content_type == CHUNKED_ENCODING) {
+                update_message_header_no_chunk(curr_message);
+            }
 
             write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
             if (write_n <= 0) {
@@ -630,9 +533,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             if (write_n <= 0) {
                 return false;
             }
-            printf("Message is complete\n");
             removeNode(all_messages, curr_message);
-            printf("Message removed\n");
         }
 
         return true;
@@ -654,10 +555,50 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     }
 }
 
+void update_message_header_no_chunk(message *msg) {
+    if (msg == NULL || msg->header == NULL) {
+        fprintf(stderr, "Error: message or header is NULL.\n");
+        return;
+    }
+
+    const char *chunked_encoding = "Transfer-Encoding: chunked\r\n";
+    char content_length_header[64];
+
+    // Check if "Transfer-Encoding: chunked" exists in the header
+    char *chunked_position = strstr(msg->header, chunked_encoding);
+    if (chunked_position == NULL) {
+        fprintf(stderr, "Error: 'Transfer-Encoding: chunked' not found in header.\n");
+        return;
+    }
+
+    // Create the new "Content-Length" header string
+    snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %d\r\n", msg->content_length);
+
+    // Calculate new header size
+    size_t header_prefix_length = chunked_position - msg->header; // Length of header before "Transfer-Encoding: chunked"
+    size_t header_suffix_length = strlen(chunked_position + strlen(chunked_encoding)); // Length of header after "Transfer-Encoding: chunked"
+    size_t new_header_length = header_prefix_length + strlen(content_length_header) + header_suffix_length;
+
+    // Allocate memory for the new header
+    char *new_header = (char *)malloc(new_header_length + 1);
+    if (new_header == NULL) {
+        fprintf(stderr, "Error: Memory allocation failed for new header.\n");
+        return;
+    }
+
+    // Build the new header
+    strncpy(new_header, msg->header, header_prefix_length); // Copy part before "Transfer-Encoding: chunked"
+    new_header[header_prefix_length] = '\0'; // Null-terminate temporarily
+    strcat(new_header, content_length_header); // Append "Content-Length: ..."
+    strcat(new_header, chunked_position + strlen(chunked_encoding)); // Append part after "Transfer-Encoding: chunked"
+
+    // Free the old header and assign the new header to msg
+    free(msg->header);
+    msg->header = new_header;
+    msg->header_length = (int)new_header_length;
+}
 
 message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_messages, int n) {
-    // print_buffer(buffer, n);
-
     message *curr_message = *msg;
     if (curr_message == NULL) {
         curr_message = malloc(sizeof(message));
@@ -670,6 +611,13 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
         curr_message->content = NULL;
         curr_message->header_complete = false;
         curr_message->msg_complete = false;
+        curr_message->content_type = -1;
+
+        curr_message->chunk_state = CHUNK_SIZE;       // Start state for chunked encoding
+        curr_message->chunk_size = 0;                // No chunk size initially
+        curr_message->bytes_read_in_chunk = 0;       // No bytes read initially
+        memset(curr_message->chunk_size_str, 0, sizeof(curr_message->chunk_size_str)); // Clear the array
+        curr_message->chunk_size_str_index = 0; 
         append(all_messages, curr_message);
     }
 
@@ -685,6 +633,8 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
             curr_message->header[header_length] = '\0';
             buffer += header_length;
             n -= header_length;
+
+            modify_accept_encoding(curr_message);
         }
     }
     if (curr_message->header_complete && !(curr_message->msg_complete)) {
@@ -692,14 +642,30 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
             char *content_length_ptr = get_content_length_ptr(curr_message->header);
             if (content_length_ptr != NULL) {
                 curr_message->content_length = atoi(content_length_ptr + 16);
-            }
-            else {
-                curr_message->content_length = 0;
-                curr_message->msg_complete = true;
+                curr_message->content_type = NORMAL_ENCODING;
             }
         }
+        if (curr_message->content_length == -1) {
+            char *transfer_encoding = strstr(curr_message->header, "Transfer-Encoding: ");
+            if (transfer_encoding != NULL) {
+                if (strstr(transfer_encoding, "chunked") != NULL) {
+                    curr_message->content_length = 0;
+                    curr_message->content_type = CHUNKED_ENCODING;
+                } else if (strstr(transfer_encoding, "Chunked") != NULL) {
+                    curr_message->content_length = 0;
+                    curr_message->content_type = CHUNKED_ENCODING;
+                } else if (strstr(transfer_encoding, "CHUNKED") != NULL) {
+                    curr_message->content_length = 0;
+                    curr_message->content_type = CHUNKED_ENCODING;
+                }
+            }
+        }
+        if (curr_message->content_length == -1 && curr_message->content_type != CHUNKED_ENCODING) {
+            curr_message->content_length = 0;
+            curr_message->msg_complete = true;
+        }
 
-        if (curr_message->content_length > 0 && n > 0) {
+        if (curr_message->content_length > 0 && n > 0 && curr_message->content_type == NORMAL_ENCODING) {
             if (curr_message->content == NULL) {
                 curr_message->content = malloc(curr_message->content_length);
                 assert(curr_message->content != NULL);
@@ -714,20 +680,233 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
                 printf("ERROR: Content length exceeded\n");
             }
             memcpy(curr_message->content + curr_message->bytes_of_content_read, buffer, copy_length);
-            // curr_message->content[curr_message->bytes_of_content_read + copy_length] = '\0';
             curr_message->bytes_of_content_read += copy_length;
 
             if (curr_message->bytes_of_content_read >= curr_message->content_length) {
                 curr_message->msg_complete = true;
             }
         }
+        // else if (curr_message->content_type == CHUNKED_ENCODING && n > 0) {
+        else if (curr_message->content_type == CHUNKED_ENCODING) {
+            printf("Chunked encoding\n");
+            printf("Received %d bytes\n", n);
+            insert_buffer_into_message(curr_message, buffer, n);
+        }
     }
 
-    // if (curr_message->msg_complete) {
-    //         printf("1 Header: %s\n", curr_message->header);
-    // }
-
     return curr_message;
+}
+
+void insert_buffer_into_message(message *msg, char *buffer, int buffer_length) {
+    // Ensure header is complete before processing chunked content
+    if (!msg->header_complete) {
+        // Error handling or return if header is not complete
+        return;
+    }
+
+    int i = 0; // Index into buffer
+
+    while (i < buffer_length) {
+        // Process chunked content
+        switch (msg->chunk_state) {
+            case CHUNK_SIZE:
+                // Parse the chunk size
+                while (i < buffer_length) {
+                    char c = buffer[i++];
+                    if (c == '\r') {
+                        // End of chunk size line
+                        msg->chunk_size_str[msg->chunk_size_str_index] = '\0';
+                        msg->chunk_size = (int)strtol(msg->chunk_size_str, NULL, 16);
+                        msg->chunk_size_str_index = 0;
+                        msg->chunk_state = CHUNK_SIZE_LF;
+                        break;
+                    } else if (c == ';') {
+                        // Ignore chunk extensions
+                        while (i < buffer_length && buffer[i] != '\r') {
+                            i++;
+                        }
+                    } else {
+                        // Append to chunk_size_str
+                        if (msg->chunk_size_str_index < (int)(sizeof(msg->chunk_size_str) - 1)) {
+                            msg->chunk_size_str[msg->chunk_size_str_index++] = c;
+                        } else {
+                            // Error: chunk size string too long
+                            return;
+                        }
+                    }
+                }
+                break;
+
+            case CHUNK_SIZE_LF:
+                if (i < buffer_length) {
+                    char c = buffer[i++];
+                    if (c == '\n') {
+                        if (msg->chunk_size == 0) {
+                            // Last chunk
+                            msg->chunk_state = CHUNK_DONE;
+                            msg->msg_complete = true;
+                        } else {
+                            msg->bytes_read_in_chunk = 0;
+                            msg->chunk_state = CHUNK_DATA;
+                        }
+                    } else {
+                        // Error: Expected '\n'
+                        return;
+                    }
+                } else {
+                    // Need more data
+                    return;
+                }
+                break;
+
+            case CHUNK_DATA:
+                {
+                    int bytes_to_read = msg->chunk_size - msg->bytes_read_in_chunk;
+                    int bytes_available = buffer_length - i;
+                    int bytes_to_copy = bytes_to_read < bytes_available ? bytes_to_read : bytes_available;
+
+                    // Allocate or expand the content buffer
+                    if (msg->content == NULL) {
+                        msg->content_length = bytes_to_copy;
+                        msg->content = malloc(msg->content_length);
+                        if (msg->content == NULL) {
+                            // Handle malloc failure
+                            return;
+                        }
+                    } else {
+                        msg->content_length += bytes_to_copy;
+                        unsigned char *new_content = realloc(msg->content, msg->content_length);
+                        if (new_content == NULL) {
+                            // Handle realloc failure
+                            return;
+                        }
+                        msg->content = new_content;
+                    }
+
+                    // Copy data to msg->content
+                    memcpy(msg->content + msg->bytes_of_content_read, buffer + i, bytes_to_copy);
+                    msg->bytes_read_in_chunk += bytes_to_copy;
+                    msg->bytes_of_content_read += bytes_to_copy;
+                    i += bytes_to_copy;
+
+                    if (msg->bytes_read_in_chunk == msg->chunk_size) {
+                        msg->chunk_state = CHUNK_DATA_CR;
+                    }
+                }
+                break;
+
+            case CHUNK_DATA_CR:
+                if (i < buffer_length) {
+                    char c = buffer[i++];
+                    if (c == '\r') {
+                        msg->chunk_state = CHUNK_DATA_LF;
+                    } else {
+                        // Error: Expected '\r'
+                        return;
+                    }
+                } else {
+                    // Need more data
+                    return;
+                }
+                break;
+
+            case CHUNK_DATA_LF:
+                if (i < buffer_length) {
+                    char c = buffer[i++];
+                    if (c == '\n') {
+                        msg->chunk_state = CHUNK_SIZE;
+                    } else {
+                        // Error: Expected '\n'
+                        return;
+                    }
+                } else {
+                    // Need more data
+                    return;
+                }
+                break;
+
+            case CHUNK_DONE:
+                // All chunks received; optionally process trailers here
+                i = buffer_length; // Consume remaining data
+                msg->msg_complete = true;
+                printf("\n\nChunked encoding complete!!!\n\n");
+                break;
+
+            default:
+                // Error: Invalid state
+                return;
+        }
+    }
+}
+
+#include <ctype.h>
+
+void modify_accept_encoding(message *curr_message) {
+    char *header = curr_message->header;
+    size_t header_length = curr_message->header_length;
+    size_t i = 0;
+
+    // The new Accept-Encoding line
+    const char *new_line = "Accept-Encoding: identity\r\n";
+    size_t new_line_length = strlen(new_line);
+
+    while (i < header_length) {
+        // Find the end of the current line
+        size_t line_start = i;
+        while (i < header_length - 1 && !(header[i] == '\r' && header[i + 1] == '\n')) {
+            i++;
+        }
+
+        if (i >= header_length - 1) {
+            // End of header reached or malformed header
+            break;
+        }
+
+        // Now, header[line_start .. i-1] is the current line (excluding "\r\n")
+        size_t line_length = i - line_start;
+
+        // Check if the line contains ':'
+        char *colon = memchr(&header[line_start], ':', line_length);
+        if (colon) {
+            size_t field_name_length = colon - &header[line_start];
+
+            // Remove any trailing whitespace from field name
+            while (field_name_length > 0 &&
+                   isspace((unsigned char)header[line_start + field_name_length - 1])) {
+                field_name_length--;
+            }
+
+            // Compare field name to "Accept-Encoding" case-insensitively
+            if (field_name_length == strlen("Accept-Encoding") &&
+                strncasecmp(&header[line_start], "Accept-Encoding", field_name_length) == 0) {
+                // Found the Accept-Encoding header
+                size_t old_line_length = (i + 2) - line_start; // Including "\r\n"
+
+                ssize_t diff = (ssize_t)new_line_length - (ssize_t)old_line_length;
+
+                if (diff != 0) {
+                    // Shift data to accommodate new line length
+                    memmove(&header[line_start + new_line_length],
+                            &header[line_start + old_line_length],
+                            header_length - (line_start + old_line_length));
+                }
+
+                // Copy new line into header
+                memcpy(&header[line_start], new_line, new_line_length);
+
+                // Update header length and null-terminate
+                curr_message->header_length += diff;
+                header_length += diff;
+                header[curr_message->header_length] = '\0';
+
+                // Header updated; exit the loop
+                break;
+            }
+        }
+
+        // Move past the "\r\n"
+        i += 2;
+    }
 }
 
 int client_or_server_fd(Node *ssl_contexts, int fd) {
@@ -846,7 +1025,7 @@ void print_buffer(unsigned char *m, unsigned size)
 {
     // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
     //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
-    
+    // printf("\nSize of buffer: %d\n", size);
     if (size > 0) {
         printf("Message content is: ");
         for (unsigned offset = 0; offset < size; offset++) {

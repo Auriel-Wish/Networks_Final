@@ -13,4 +13,4 @@ a.out: $(obj)
 
 .PHONY: clean
 clean:
-	rm -f $(obj) a.out *.*.crt *.*.key
+	rm -f $(obj) a.out *.*.crt *.*.key out.txt
