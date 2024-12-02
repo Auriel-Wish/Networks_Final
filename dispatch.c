@@ -15,7 +15,7 @@
 
 #include <zlib.h>
 #define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
-
+#define CHUNK 16384
 
 
 SSL_CTX *create_ssl_context() {
@@ -356,6 +356,93 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     }
 }
 
+int compress_gzip(const char *content, int content_length, char **compressed, int *compressed_length) {
+    z_stream strm;
+    unsigned char out[CHUNK];
+    int ret;
+    int have;
+    char *result = NULL;
+    int result_size = 0;
+
+    // Initialize zlib stream
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+
+    // Initialize for GZIP compression
+    ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY);
+    if (ret != Z_OK) {
+        return ret;
+    }
+
+    strm.avail_in = content_length;
+    strm.next_in = (unsigned char *)content;
+
+    do {
+        strm.avail_out = CHUNK;
+        strm.next_out = out;
+        ret = deflate(&strm, Z_FINISH);
+        if (ret != Z_STREAM_END && ret != Z_OK && ret != Z_BUF_ERROR) {
+            deflateEnd(&strm);
+            free(result);
+            return ret;
+        }
+        have = CHUNK - strm.avail_out;
+        result = realloc(result, result_size + have);
+        if (!result) {
+            deflateEnd(&strm);
+            return Z_MEM_ERROR;
+        }
+        memcpy(result + result_size, out, have);
+        result_size += have;
+    } while (strm.avail_out == 0);
+
+    // Clean up
+    deflateEnd(&strm);
+
+    *compressed = result;
+    *compressed_length = result_size;
+    return Z_OK;
+}
+
+void update_header_content_length(char *header, int header_length, int new_content_length) {
+    char *cl_pos = strstr(header, "Content-Length: ");
+    if (cl_pos) {
+        char *line_end = strstr(cl_pos, "\r\n");
+        if (line_end) {
+            char new_value[32];
+            snprintf(new_value, sizeof(new_value), "Content-Length: %d", new_content_length);
+            int new_value_len = strlen(new_value);
+            int old_value_len = line_end - cl_pos;
+            memmove(cl_pos + new_value_len, cl_pos + old_value_len, header_length - (cl_pos - header) - old_value_len);
+            memcpy(cl_pos, new_value, new_value_len);
+        }
+    }
+}
+
+int process_http_response(char *header, int header_length, char *content, int content_length) {
+    char *compressed_content = NULL;
+    int compressed_length = 0;
+
+    // Compress the content
+    int ret = compress_gzip(content, content_length, &compressed_content, &compressed_length);
+    if (ret != Z_OK) {
+        fprintf(stderr, "GZIP compression failed with error code: %d\n", ret);
+        return ret;
+    }
+
+    // Update Content-Length in the header
+    update_header_content_length(header, header_length, compressed_length);
+
+    // Replace content with compressed content
+    memcpy(content, compressed_content, compressed_length);
+
+    // Free the compressed content buffer
+    free(compressed_content);
+
+    return compressed_length;
+}
+
 
 // char *decompress_and_print(const char *compressed_data, size_t compressed_len) {
 //     // Buffer for decompressed data
@@ -498,9 +585,12 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             // char *d_msg = decompress_and_print((char *) curr_message->content, curr_message->content_length);
             decompress(curr_message);
             inject_script_into_html(curr_message);
-
             print_buffer(curr_message->content, curr_message->content_length);
 
+            process_http_response((char *) curr_message->header, curr_message->header_length, (char *) curr_message->content, curr_message->content_length);
+
+
+            
 
             // if (d_msg != NULL) {
             //     printf("Injecting new data\n");
