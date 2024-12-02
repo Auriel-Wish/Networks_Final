@@ -320,6 +320,11 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
 
     // fprintf(stderr, "READING SERVER RESPONSE: %d bytes...", read_n);
 
+    // Printing out the server response to prove it has been decrypted
+    fprintf(stderr, "READING SERVER RESPONSE\n");
+    print_buffer(buffer, read_n -1);
+
+
     if (read_n > 0) {
         buffer[read_n] = '\0';
 
@@ -494,3 +499,24 @@ void inject_script_into_html(char *response, size_t response_size) {
 
 //     return content_length;
 // }
+
+void print_buffer(char *m, unsigned size)
+{
+    // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
+    //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
+    
+    if (size > 0) {
+        printf("Message content is: ");
+        for (unsigned offset = 0; offset < size; offset++) {
+            if (m[offset] == '\0') {
+                putchar('.');
+            }
+
+            else {
+                putchar(m[offset]);
+            }
+        }
+
+        printf("\n");
+    }
+}

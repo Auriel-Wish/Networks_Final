@@ -24,3 +24,5 @@ bool read_server_response(int server_fd, Node **ssl_contexts);
 // char *get_content_length_ptr(char *str);
 
 void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context);
+
+void print_buffer(char *m, unsigned size);
