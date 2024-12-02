@@ -357,9 +357,12 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
 }
 
 
-void decompress_and_print(const char *compressed_data, size_t compressed_len) {
+char *decompress_and_print(const char *compressed_data, size_t compressed_len) {
     // Buffer for decompressed data
-    char decompressed_data[BUFFER_SIZE * 2]; // Adjust buffer size as needed
+    // char decompressed_data[BUFFER_SIZE * 2]; // Adjust buffer size as needed
+    
+    // making buffer heap alloc'd
+    char *decompressed_data = calloc(BUFFER_SIZE * 2, sizeof(char));
 
     z_stream stream = {0};
     stream.next_in = (Bytef *)compressed_data;
@@ -370,7 +373,7 @@ void decompress_and_print(const char *compressed_data, size_t compressed_len) {
     // Initialize for gzip decoding
     if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
         fprintf(stderr, "Failed to initialize zlib for gzip decompression\n");
-        return;
+        return NULL;
     }
 
     int result = inflate(&stream, Z_FINISH);
@@ -381,10 +384,14 @@ void decompress_and_print(const char *compressed_data, size_t compressed_len) {
         fprintf(stderr, "Decompressed Content:\n");
         fwrite(decompressed_data, 1, stream.total_out, stderr);
         fprintf(stderr, "\n");
+        return decompressed_data;
+
     } else {
         fprintf(stderr, "Failed to decompress gzip data (error code: %d)\n", result);
+        return NULL;
     }
 }
+
 
 bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_messages) {
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
@@ -439,7 +446,17 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             // print_buffer((char *) curr_message->content, curr_message->content_length);
 
             // DECOMPRESSED message content
-            decompress_and_print((char *) curr_message->content, curr_message->content_length);
+            char *d_msg = decompress_and_print((char *) curr_message->content, curr_message->content_length);
+            if (d_msg != NULL) {
+                
+                inject_script_into_html(curr_message);
+
+                // recompress message content
+            } else {
+                // do nothing
+            }
+
+
 
 
             // char *header_end = strstr((char *) curr_message->content, "\r\n\r\n");
@@ -454,7 +471,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             // NOTE: This does not work right now. Add this back in when Auriel fixes it.
             // inject_script_into_html(curr_message);
             // printf("Header: %s", curr_message->header);
-            inject_script_into_html(curr_message);
 
             // printf("Header: %s", curr_message->header);
 
