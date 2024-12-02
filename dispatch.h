@@ -25,7 +25,7 @@ char *get_content_length_ptr(char *str);
 
 void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context);
 
-void print_buffer(char *m, unsigned size);
+void print_buffer(unsigned char *m, unsigned size);
 
 message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_messages, int n);
 

@@ -357,38 +357,85 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
 }
 
 
-char *decompress_and_print(const char *compressed_data, size_t compressed_len) {
-    // Buffer for decompressed data
-    // char decompressed_data[BUFFER_SIZE * 2]; // Adjust buffer size as needed
+// char *decompress_and_print(const char *compressed_data, size_t compressed_len) {
+//     // Buffer for decompressed data
+//     // char decompressed_data[BUFFER_SIZE * 2]; // Adjust buffer size as needed
     
-    // making buffer heap alloc'd
-    char *decompressed_data = calloc(BUFFER_SIZE * 2, sizeof(char));
+//     // making buffer heap alloc'd
+//     char *decompressed_data = calloc(BUFFER_SIZE * 2, sizeof(char));
+//     assert(decompressed_data != NULL);
+
+//     z_stream stream = {0};
+//     stream.next_in = (Bytef *)compressed_data;
+//     stream.avail_in = compressed_len;
+//     stream.next_out = (Bytef *)decompressed_data;
+//     stream.avail_out = sizeof(decompressed_data);
+
+//     // Initialize for gzip decoding
+//     if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
+//         fprintf(stderr, "Failed to initialize zlib for gzip decompression\n");
+//         return NULL;
+//     }
+
+//     int result = inflate(&stream, Z_FINISH);
+//     inflateEnd(&stream);
+
+//     if (result == Z_STREAM_END) {
+//         // Successfully decompressed data
+//         fprintf(stderr, "Decompressed Content:\n");
+//         fwrite(decompressed_data, 1, stream.total_out, stderr);
+//         fprintf(stderr, "\n");
+//         return decompressed_data;
+
+//     } else {
+//         fprintf(stderr, "Failed to decompress gzip data (error code: %d)\n", result);
+//         return NULL;
+//     }
+// }
+
+void decompress(message *m) {
+    if (m == NULL || m->content == NULL || m->content_length == 0) {
+        fprintf(stderr, "Message is null or content is empty. Cannot decompress.\n");
+        return;
+    }
+
+    // Allocate buffer for decompressed data
+    size_t decompressed_size = m->content_length * 4; // Estimate a reasonable expansion factor
+    unsigned char *decompressed_content = malloc(decompressed_size);
+    if (decompressed_content == NULL) {
+        fprintf(stderr, "Failed to allocate memory for decompression.\n");
+        return;
+    }
 
     z_stream stream = {0};
-    stream.next_in = (Bytef *)compressed_data;
-    stream.avail_in = compressed_len;
-    stream.next_out = (Bytef *)decompressed_data;
-    stream.avail_out = sizeof(decompressed_data);
+    stream.next_in = m->content;
+    stream.avail_in = m->content_length;
+    stream.next_out = decompressed_content;
+    stream.avail_out = decompressed_size;
 
-    // Initialize for gzip decoding
+    // Initialize zlib for gzip decoding
     if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
-        fprintf(stderr, "Failed to initialize zlib for gzip decompression\n");
-        return NULL;
+        fprintf(stderr, "Failed to initialize zlib for gzip decompression.\n");
+        free(decompressed_content);
+        return;
     }
 
     int result = inflate(&stream, Z_FINISH);
     inflateEnd(&stream);
 
     if (result == Z_STREAM_END) {
-        // Successfully decompressed data
-        fprintf(stderr, "Decompressed Content:\n");
-        fwrite(decompressed_data, 1, stream.total_out, stderr);
-        fprintf(stderr, "\n");
-        return decompressed_data;
+        // Successfully decompressed
+        fprintf(stderr, "Decompressed %lu bytes to %lu bytes.\n", (unsigned long)m->content_length, (unsigned long)stream.total_out);
+
+        // Free the original content and replace it with the decompressed content
+        free(m->content);
+        m->content = decompressed_content;
+        m->content_length = stream.total_out;
 
     } else {
-        fprintf(stderr, "Failed to decompress gzip data (error code: %d)\n", result);
-        return NULL;
+        // Decompression failed
+        fprintf(stderr, "Decompression failed (error code: %d).\n", result);
+        free(decompressed_content);
     }
 }
 
@@ -442,19 +489,28 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
         if (curr_message->msg_complete) {
             printf("Message is complete FROM SERVER\n");
+
             // RAW message content
-            // print_buffer((char *) curr_message->content, curr_message->content_length);
+            print_buffer(curr_message->content, curr_message->content_length);
+            printf("Making it past this\n");
 
             // DECOMPRESSED message content
-            char *d_msg = decompress_and_print((char *) curr_message->content, curr_message->content_length);
-            if (d_msg != NULL) {
-                
-                inject_script_into_html(curr_message);
+            // char *d_msg = decompress_and_print((char *) curr_message->content, curr_message->content_length);
+            decompress(curr_message);
+            inject_script_into_html(curr_message);
 
-                // recompress message content
-            } else {
-                // do nothing
-            }
+            print_buffer(curr_message->content, curr_message->content_length);
+
+
+            // if (d_msg != NULL) {
+            //     printf("Injecting new data\n");
+            //     inject_script_into_html(curr_message);
+            //     // recompress message content
+
+            // } else {
+            //     printf("Nothing recognized\n");
+            //     // do nothing
+            // }
 
 
 
@@ -696,7 +752,7 @@ char *get_content_length_ptr(char *str) {
     return content_length;
 }
 
-void print_buffer(char *m, unsigned size)
+void print_buffer(unsigned char *m, unsigned size)
 {
     // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
     //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
