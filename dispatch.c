@@ -271,15 +271,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         buffer[n] = '\0';
         
         if (n > 0) {
-            char *accept_encoding = strstr(buffer, "Accept-Encoding: ");
-            if (accept_encoding != NULL) {
-                char *end_of_accept_encoding = strstr(accept_encoding, "\r\n");
-                if (end_of_accept_encoding != NULL) {
-                    memmove(end_of_accept_encoding + strlen("\r\n"), end_of_accept_encoding, n - (end_of_accept_encoding - buffer));
-                    memcpy(end_of_accept_encoding, "\r\nAccept-Encoding: identity", strlen("\r\nAccept-Encoding: identity"));
-                    n += strlen("\r\nAccept-Encoding: identity");
-                }
-            }
+            
 
             // char *end_of_header = strstr(buffer, "\r\n\r\n");
             // if (end_of_header != NULL) {
