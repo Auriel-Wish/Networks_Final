@@ -360,7 +360,10 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         if (curr_message->msg_complete) {
             printf("Message is complete FROM SERVER\n");
             // print_buffer((char *) curr_message->content, curr_message->content_length);
+            // printf("Header: %s", curr_message->header);
             inject_script_into_html(curr_message);
+
+            // printf("Header: %s", curr_message->header);
 
             write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
             if (write_n <= 0) {
@@ -372,8 +375,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             if (write_n <= 0) {
                 return false;
             }
-
+            printf("Message is complete\n");
             removeNode(all_messages, curr_message);
+            printf("Message removed\n");
         }
 
         
@@ -470,9 +474,6 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
         }
 
         if (curr_message->content_length > 0 && n > 0) {
-            // printf("Content length: %d\n", curr_message->content_length);
-            // printf("Bytes of content read: %d\n", curr_message->bytes_of_content_read);
-            // printf("N: %d\n", n);
             if (curr_message->content == NULL) {
                 curr_message->content = malloc(curr_message->content_length);
                 assert(curr_message->content != NULL);
@@ -495,6 +496,10 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
             }
         }
     }
+
+    // if (curr_message->msg_complete) {
+    //         printf("1 Header: %s\n", curr_message->header);
+    // }
 
     return curr_message;
 }
@@ -531,10 +536,11 @@ void set_max_fd(int new_fd, int *max_fd) {
 //     return result;
 // }
 
+
 void inject_script_into_html(message *msg) {
     const char *body_tag = "</body>";
-    char *pos = strstr((const char *) msg->content, body_tag);
-    // char *pos = reverse_strstr(response, body_tag);
+    char *pos = strstr((const char *)msg->content, body_tag);
+
     if (pos) {
         const char *script_to_inject = 
             "<script>"
@@ -545,7 +551,6 @@ void inject_script_into_html(message *msg) {
             "  factCheckButton.style.bottom = '10px';"
             "  factCheckButton.style.right = '10px';"
             "  document.body.appendChild(factCheckButton);"
-            ""
             "  factCheckButton.addEventListener('click', async () => {"
             "    const selection = window.getSelection().toString();"
             "    if (selection) {"
@@ -561,35 +566,46 @@ void inject_script_into_html(message *msg) {
             "});"
             "</script>";
 
-        // Create a new buffer with the injected script
-        size_t new_size = msg->content_length + strlen(script_to_inject);
-        msg->content_length = new_size;
+        size_t script_length = strlen(script_to_inject);
+        size_t new_content_length = msg->content_length + script_length;
 
-        // Replace the Content-Length in the header
-        char *content_length_ptr = get_content_length_ptr(msg->header);
-        if (content_length_ptr != NULL) {
-            snprintf(content_length_ptr + 16, 20, "%zu", new_size);
-        }
-
-        char *new_response = malloc(new_size + 1);
-        if (!new_response) {
+        // Allocate new memory for the modified content
+        char *new_content = malloc(new_content_length + 1);
+        if (!new_content) {
             perror("malloc failed");
             return;
         }
 
-        // Copy up to the </body> tag
-        size_t prefix_length = pos - (char *) msg->content;
-        strncpy(new_response, (char *) msg->content, prefix_length);
+        // Copy the content up to the </body> tag
+        size_t prefix_length = pos - (char *)msg->content;
+        strncpy(new_content, (char *)msg->content, prefix_length);
 
         // Inject the script
-        strcpy(new_response + prefix_length, script_to_inject);
+        strcpy(new_content + prefix_length, script_to_inject);
 
         // Append the </body> tag and the rest of the response
-        strcpy(new_response + prefix_length + strlen(script_to_inject), pos);
+        strcpy(new_content + prefix_length + script_length, pos);
 
-        // Replace the original response
-        strcpy((char *) msg->content, new_response);
-        free(new_response);
+        // Update the message content
+        free(msg->content);
+        msg->content = (unsigned char *)new_content;
+        msg->content_length = new_content_length;
+
+        // Replace the Content-Length in the header
+        char *content_length_ptr = get_content_length_ptr(msg->header);
+        if (content_length_ptr) {
+            // Remove the old Content-Length header
+            char *content_length_end = strstr(content_length_ptr, "\r\n");
+            size_t header_suffix_length = strlen(content_length_end + 2); // +2 to skip \r\n
+            memmove(content_length_ptr, content_length_end + 2, header_suffix_length + 1); // +1 to include the null terminator
+
+            // Insert the new Content-Length header
+            char new_content_length_header[50];
+            snprintf(new_content_length_header, sizeof(new_content_length_header), "Content-Length: %zu\r\n", new_content_length);
+            size_t new_header_length = strlen(new_content_length_header);
+            memmove(content_length_ptr + new_header_length, content_length_ptr, header_suffix_length + 1); // +1 to include the null terminator
+            memcpy(content_length_ptr, new_content_length_header, new_header_length);
+        }
     }
 }
 
