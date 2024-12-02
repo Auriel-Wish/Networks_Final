@@ -385,7 +385,7 @@ void decompress_and_print(const char *compressed_data, size_t compressed_len) {
     }
 }
 
-bool read_server_response(int server_fd, Node **ssl_contexts) {
+bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_messages) {
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
     if (curr_context == NULL) {
         return false;
