@@ -356,6 +356,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     }
 }
 
+
 void decompress_and_print(const char *compressed_data, size_t compressed_len) {
     // Buffer for decompressed data
     char decompressed_data[BUFFER_SIZE * 2]; // Adjust buffer size as needed
@@ -406,39 +407,40 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
         buffer[read_n] = '\0';
 
-        // // Look for the end of a header
-        // char *header_end = strstr(buffer, "\r\n\r\n");
+        // Look for the end of a header
+        char *header_end = strstr(buffer, "\r\n\r\n");
 
         
-        // if (header_end != NULL) {
-        //     printf("\nFOUND A HEADER\n");
-        // } else {
-        //     printf("\nFOUND A BODY\n");
-        //     decompress_and_print(buffer, read_n);
-        // }
+        if (header_end != NULL) {
+            printf("\nFOUND A HEADER\n");
+        } else {
+            printf("\nFOUND A BODY\n");
+            decompress_and_print(buffer, read_n);
+        }
 
         fprintf(stderr, "READING SERVER RESPONSE:\n");
         print_buffer(buffer, read_n -1);
-        message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
-        curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
-        if (curr_message->msg_complete) {
-            printf("Message is complete FROM SERVER\n");
-            // print_buffer((char *) curr_message->content, curr_message->content_length);
-            inject_script_into_html(curr_message);
 
-            write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
-            if (write_n <= 0) {
-                return false;
-            }
-            if (curr_message->content_length > 0) {
-                write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
-            }
-            if (write_n <= 0) {
-                return false;
-            }
+        // message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
+        // curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
+        // if (curr_message->msg_complete) {
+        //     printf("Message is complete FROM SERVER\n");
+        //     // print_buffer((char *) curr_message->content, curr_message->content_length);
+        //     inject_script_into_html(curr_message);
 
-            removeNode(all_messages, curr_message);
-        }
+        //     write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
+        //     if (write_n <= 0) {
+        //         return false;
+        //     }
+        //     if (curr_message->content_length > 0) {
+        //         write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
+        //     }
+        //     if (write_n <= 0) {
+        //         return false;
+        //     }
+
+        //     removeNode(all_messages, curr_message);
+        // }
 
         
         // int write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
@@ -457,15 +459,15 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         }
         */
         
-        // int total_written = 0;
-        // while (total_written < read_n) {
-        //     int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
-        //     if (write_n <= 0) {
-        //         // printf("Error writing to client\n");
-        //         return false;
-        //     }
-        //     total_written += write_n;
-        // }
+        int total_written = 0;
+        while (total_written < read_n) {
+            int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
+            if (write_n <= 0) {
+                // printf("Error writing to client\n");
+                return false;
+            }
+            total_written += write_n;
+        }
 
         // fprintf(stderr, "DONE\n");
 
