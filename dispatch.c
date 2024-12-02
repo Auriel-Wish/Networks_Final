@@ -242,7 +242,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 
 
 bool read_client_request(int client_fd, Node **ssl_contexts, 
-    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache) {
+    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache, Node **all_messages) {
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, client_fd);
 
     (void)cache;
@@ -268,22 +268,32 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         int n;
 
         n = SSL_read(curr_context->client_ssl, buffer, BUFFER_SIZE);
-        buffer[n] = '\0';
         
         if (n > 0) {
-            char *accept_encoding = strstr(buffer, "Accept-Encoding: ");
-            if (accept_encoding != NULL) {
-                char *end_of_line = strstr(accept_encoding, "\r\n");
-                if (end_of_line != NULL) {
-                    size_t prefix_length = accept_encoding - buffer;
-                    size_t suffix_length = strlen(end_of_line);
-                    memmove(accept_encoding, end_of_line, suffix_length + 1);
-                    snprintf(buffer + prefix_length, BUFFER_SIZE - prefix_length, "Accept-Encoding: identity\r\n%s", accept_encoding);
-                }
+            buffer[n] = '\0';
+
+            message *curr_message = get_message_by_filedes(*all_messages, curr_context->client_fd);
+            curr_message = insert_new_data(&curr_message, buffer, curr_context->client_fd, all_messages, n);
+            if (curr_message->msg_complete) {
+                printf("Message is complete FROM CLIENT\n");
+                // print_buffer((char *) curr_message->content, curr_message->content_length);
+                removeNode(all_messages, curr_message);
             }
 
-            fprintf(stderr, "Printing out the HEADER\n");
-            print_buffer(buffer, n);
+            // char *accept_encoding = strstr(buffer, "Accept-Encoding: ");
+            // if (accept_encoding != NULL) {
+            //     char *end_of_line = strstr(accept_encoding, "\r\n");
+            //     if (end_of_line != NULL) {
+            //         size_t prefix_length = accept_encoding - buffer;
+            //         size_t suffix_length = strlen(end_of_line + 2); // +2 to skip \r\n
+            //         memmove(accept_encoding, end_of_line + 2, suffix_length);
+            //         // snprintf(buffer + prefix_length, BUFFER_SIZE - prefix_length, "Accept-Encoding: gzip\r\n%s", end_of_line + 2);
+            //         snprintf(buffer + prefix_length, BUFFER_SIZE - prefix_length, "Accept-Encoding: identity\r\n%s", end_of_line + 2);
+            //     }
+            // }
+
+            // fprintf(stderr, "Printing out the HEADER\n");
+            // print_buffer(buffer, n);
 
 
             // char *end_of_header = strstr(buffer, "\r\n\r\n");
@@ -323,7 +333,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     }
 }
 
-bool read_server_response(int server_fd, Node **ssl_contexts) {
+bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_messages) {
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
     if (curr_context == NULL) {
         return false;
@@ -341,7 +351,36 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
 
 
     if (read_n > 0) {
+        int write_n;
+
         buffer[read_n] = '\0';
+
+        message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
+        curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
+        if (curr_message->msg_complete) {
+            printf("Message is complete FROM SERVER\n");
+            // print_buffer((char *) curr_message->content, curr_message->content_length);
+            inject_script_into_html(curr_message);
+
+            write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
+            if (write_n <= 0) {
+                return false;
+            }
+            if (curr_message->content_length > 0) {
+                write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
+            }
+            if (write_n <= 0) {
+                return false;
+            }
+
+            removeNode(all_messages, curr_message);
+        }
+
+        
+        // int write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
+        // if (write_n <= 0) {
+        //     return false;
+        // }
 
         // printf("%s", buffer);
 
@@ -354,15 +393,15 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
         }
         */
         
-        int total_written = 0;
-        while (total_written < read_n) {
-            int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
-            if (write_n <= 0) {
-                // printf("Error writing to client\n");
-                return false;
-            }
-            total_written += write_n;
-        }
+        // int total_written = 0;
+        // while (total_written < read_n) {
+        //     int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
+        //     if (write_n <= 0) {
+        //         // printf("Error writing to client\n");
+        //         return false;
+        //     }
+        //     total_written += write_n;
+        // }
 
         // fprintf(stderr, "DONE\n");
 
@@ -383,6 +422,81 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
             return false; // Close the connection
         }
     }
+}
+
+
+message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_messages, int n) {
+    // print_buffer(buffer, n);
+
+    message *curr_message = *msg;
+    if (curr_message == NULL) {
+        curr_message = malloc(sizeof(message));
+        assert(curr_message != NULL);
+        curr_message->filedes = filedes;
+        curr_message->header_length = -1;
+        curr_message->content_length = -1;
+        curr_message->bytes_of_content_read = 0;
+        curr_message->header = NULL;
+        curr_message->content = NULL;
+        curr_message->header_complete = false;
+        curr_message->msg_complete = false;
+        append(all_messages, curr_message);
+    }
+
+    if (!(curr_message->header_complete)) {
+        char *header_end = strstr(buffer, "\r\n\r\n");
+        if (header_end != NULL) {
+            curr_message->header_complete = true;
+            size_t header_length = header_end - buffer + 4;
+            curr_message->header_length = header_length;
+            curr_message->header = malloc(header_length + 1);
+            assert(curr_message->header != NULL);
+            memcpy(curr_message->header, buffer, header_length);
+            curr_message->header[header_length] = '\0';
+            buffer += header_length;
+            n -= header_length;
+        }
+    }
+    if (curr_message->header_complete && !(curr_message->msg_complete)) {
+        if (curr_message->content_length == -1) {
+            char *content_length_ptr = get_content_length_ptr(curr_message->header);
+            if (content_length_ptr != NULL) {
+                curr_message->content_length = atoi(content_length_ptr + 16);
+            }
+            else {
+                curr_message->content_length = 0;
+                curr_message->msg_complete = true;
+            }
+        }
+
+        if (curr_message->content_length > 0 && n > 0) {
+            // printf("Content length: %d\n", curr_message->content_length);
+            // printf("Bytes of content read: %d\n", curr_message->bytes_of_content_read);
+            // printf("N: %d\n", n);
+            if (curr_message->content == NULL) {
+                curr_message->content = malloc(curr_message->content_length);
+                assert(curr_message->content != NULL);
+            }
+
+            int remaining_length = curr_message->content_length - curr_message->bytes_of_content_read;
+            int copy_length;
+            if (n <= remaining_length) {
+                copy_length = n;
+            } else {
+                copy_length = remaining_length;
+                printf("ERROR: Content length exceeded\n");
+            }
+            memcpy(curr_message->content + curr_message->bytes_of_content_read, buffer, copy_length);
+            // curr_message->content[curr_message->bytes_of_content_read + copy_length] = '\0';
+            curr_message->bytes_of_content_read += copy_length;
+
+            if (curr_message->bytes_of_content_read >= curr_message->content_length) {
+                curr_message->msg_complete = true;
+            }
+        }
+    }
+
+    return curr_message;
 }
 
 int client_or_server_fd(Node *ssl_contexts, int fd) {
@@ -417,9 +531,9 @@ void set_max_fd(int new_fd, int *max_fd) {
 //     return result;
 // }
 
-void inject_script_into_html(char *response, size_t response_size) {
+void inject_script_into_html(message *msg) {
     const char *body_tag = "</body>";
-    char *pos = strstr(response, body_tag);
+    char *pos = strstr((const char *) msg->content, body_tag);
     // char *pos = reverse_strstr(response, body_tag);
     if (pos) {
         const char *script_to_inject = 
@@ -448,7 +562,15 @@ void inject_script_into_html(char *response, size_t response_size) {
             "</script>";
 
         // Create a new buffer with the injected script
-        size_t new_size = response_size + strlen(script_to_inject);
+        size_t new_size = msg->content_length + strlen(script_to_inject);
+        msg->content_length = new_size;
+
+        // Replace the Content-Length in the header
+        char *content_length_ptr = get_content_length_ptr(msg->header);
+        if (content_length_ptr != NULL) {
+            snprintf(content_length_ptr + 16, 20, "%zu", new_size);
+        }
+
         char *new_response = malloc(new_size + 1);
         if (!new_response) {
             perror("malloc failed");
@@ -456,8 +578,8 @@ void inject_script_into_html(char *response, size_t response_size) {
         }
 
         // Copy up to the </body> tag
-        size_t prefix_length = pos - response;
-        strncpy(new_response, response, prefix_length);
+        size_t prefix_length = pos - (char *) msg->content;
+        strncpy(new_response, (char *) msg->content, prefix_length);
 
         // Inject the script
         strcpy(new_response + prefix_length, script_to_inject);
@@ -466,7 +588,7 @@ void inject_script_into_html(char *response, size_t response_size) {
         strcpy(new_response + prefix_length + strlen(script_to_inject), pos);
 
         // Replace the original response
-        strcpy(response, new_response);
+        strcpy((char *) msg->content, new_response);
         free(new_response);
     }
 }
@@ -493,27 +615,27 @@ void inject_script_into_html(char *response, size_t response_size) {
 //     }
 // }
 
-// char *get_content_length_ptr(char *str) {
-//     assert(str != NULL);
-//     char *content_length = strstr(str, "Content-Length: ");
-//     if (content_length == NULL) {
-//         content_length = strstr(str, "content-length: ");
-//     }
+char *get_content_length_ptr(char *str) {
+    assert(str != NULL);
+    char *content_length = strstr(str, "Content-Length: ");
+    if (content_length == NULL) {
+        content_length = strstr(str, "content-length: ");
+    }
 
-//     if (content_length == NULL) {
-//         content_length = strstr(str, "Content-length: ");
-//     }
+    if (content_length == NULL) {
+        content_length = strstr(str, "Content-length: ");
+    }
 
-//     if (content_length == NULL) {
-//         content_length = strstr(str, "content-Length: ");
-//     }
+    if (content_length == NULL) {
+        content_length = strstr(str, "content-Length: ");
+    }
 
-//     if (content_length == NULL) {
-//         content_length = strstr(str, "CONTENT-LENGTH: ");
-//     }
+    if (content_length == NULL) {
+        content_length = strstr(str, "CONTENT-LENGTH: ");
+    }
 
-//     return content_length;
-// }
+    return content_length;
+}
 
 void print_buffer(char *m, unsigned size)
 {

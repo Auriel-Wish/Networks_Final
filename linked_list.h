@@ -23,17 +23,20 @@ typedef struct {
     char *hostname;
 } Context_T;
 
-// typedef struct {
-//     int filedes;
+typedef struct {
+    int filedes;
 
-//     char msg_type;
-//     int header_length;
-//     int content_length;
-//     int total_msg_size;
+    // char msg_type;
+    int header_length;
+    int content_length;
+    int bytes_of_content_read;
 
-//     unsigned char *msg_data;
-//     bool msg_complete;
-// } message;
+    char *header;
+    unsigned char *content;
+
+    bool header_complete;
+    bool msg_complete;
+} message;
 
 void append(Node **head, void *data);
 void removeNode(Node **head, void *data);
@@ -41,3 +44,4 @@ void freeList(Node *head);
 
 Context_T *get_ssl_context_by_client_fd(Node *head, int client_fd);
 Context_T *get_ssl_context_by_server_fd(Node *head, int server_fd);
+message *get_message_by_filedes(Node *head, int filedes);
