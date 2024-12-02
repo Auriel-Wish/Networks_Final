@@ -271,7 +271,20 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         buffer[n] = '\0';
         
         if (n > 0) {
-            
+            char *accept_encoding = strstr(buffer, "Accept-Encoding: ");
+            if (accept_encoding != NULL) {
+                char *end_of_line = strstr(accept_encoding, "\r\n");
+                if (end_of_line != NULL) {
+                    size_t prefix_length = accept_encoding - buffer;
+                    size_t suffix_length = strlen(end_of_line);
+                    memmove(accept_encoding, end_of_line, suffix_length + 1);
+                    snprintf(buffer + prefix_length, BUFFER_SIZE - prefix_length, "Accept-Encoding: identity\r\n%s", accept_encoding);
+                }
+            }
+
+            fprintf(stderr, "Printing out the HEADER\n");
+            print_buffer(buffer, n);
+
 
             // char *end_of_header = strstr(buffer, "\r\n\r\n");
             // if (end_of_header != NULL) {
@@ -323,14 +336,14 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
     // fprintf(stderr, "READING SERVER RESPONSE: %d bytes...", read_n);
 
     // Printing out the server response to prove it has been decrypted
-    fprintf(stderr, "READING SERVER RESPONSE\n");
-    print_buffer(buffer, read_n -1);
+    // fprintf(stderr, "READING SERVER RESPONSE\n");
+    // print_buffer(buffer, read_n -1);
 
 
     if (read_n > 0) {
         buffer[read_n] = '\0';
 
-        printf("%s", buffer);
+        // printf("%s", buffer);
 
         /*
         if (curr_context->response_header_length == -1) {
