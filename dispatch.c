@@ -271,16 +271,26 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         buffer[n] = '\0';
         
         if (n > 0) {
-            char *end_of_header = strstr(buffer, "\r\n\r\n");
-            if (end_of_header != NULL) {
-                size_t header_length = end_of_header - buffer;
-                size_t new_header_length = header_length + strlen("\r\nAccept-Encoding: identity");
-                if (new_header_length < BUFFER_SIZE) {
-                    memmove(end_of_header + strlen("\r\nAccept-Encoding: identity"), end_of_header, n - header_length);
-                    memcpy(end_of_header, "\r\nAccept-Encoding: identity", strlen("\r\nAccept-Encoding: identity"));
+            char *accept_encoding = strstr(buffer, "Accept-Encoding: ");
+            if (accept_encoding != NULL) {
+                char *end_of_accept_encoding = strstr(accept_encoding, "\r\n");
+                if (end_of_accept_encoding != NULL) {
+                    memmove(end_of_accept_encoding + strlen("\r\n"), end_of_accept_encoding, n - (end_of_accept_encoding - buffer));
+                    memcpy(end_of_accept_encoding, "\r\nAccept-Encoding: identity", strlen("\r\nAccept-Encoding: identity"));
                     n += strlen("\r\nAccept-Encoding: identity");
                 }
             }
+
+            // char *end_of_header = strstr(buffer, "\r\n\r\n");
+            // if (end_of_header != NULL) {
+            //     size_t header_length = end_of_header - buffer;
+            //     size_t new_header_length = header_length + strlen("\r\nAccept-Encoding: identity");
+            //     if (new_header_length < BUFFER_SIZE) {
+            //         memmove(end_of_header + strlen("\r\nAccept-Encoding: identity"), end_of_header, n - header_length);
+            //         memcpy(end_of_header, "\r\nAccept-Encoding: identity", strlen("\r\nAccept-Encoding: identity"));
+            //         n += strlen("\r\nAccept-Encoding: identity");
+            //     }
+            // }
 
             n = SSL_write(curr_context->server_ssl, buffer, n);
             if (n == 0) {
