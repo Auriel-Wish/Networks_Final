@@ -86,6 +86,8 @@ int main(int argc, char **argv)
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
 
+    Node *all_messages = NULL;
+
     while (true) {
         read_fd_set = active_read_fd_set;
 
@@ -142,14 +144,14 @@ int main(int argc, char **argv)
 
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
                     // printf("\nReading from server: %d\n", i);
-                    if (!read_server_response(i, &ssl_contexts)) {
+                    if (!read_server_response(i, &ssl_contexts, &all_messages)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 } 
                 
                 else {
                     // printf("\nReading from client %d\n", i);
-                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, NULL)) {
+                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, NULL, &all_messages)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 }
