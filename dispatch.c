@@ -271,6 +271,17 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         buffer[n] = '\0';
         
         if (n > 0) {
+            char *end_of_header = strstr(buffer, "\r\n\r\n");
+            if (end_of_header != NULL) {
+                size_t header_length = end_of_header - buffer;
+                size_t new_header_length = header_length + strlen("\r\nAccept-Encoding: identity");
+                if (new_header_length < BUFFER_SIZE) {
+                    memmove(end_of_header + strlen("\r\nAccept-Encoding: identity"), end_of_header, n - header_length);
+                    memcpy(end_of_header, "\r\nAccept-Encoding: identity", strlen("\r\nAccept-Encoding: identity"));
+                    n += strlen("\r\nAccept-Encoding: identity");
+                }
+            }
+
             n = SSL_write(curr_context->server_ssl, buffer, n);
             if (n == 0) {
                 // printf("Server closed connection\n");
@@ -308,7 +319,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts) {
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
 
     // fprintf(stderr, "READING SERVER RESPONSE: %d bytes...", read_n);
-
 
     if (read_n > 0) {
         buffer[read_n] = '\0';
@@ -371,6 +381,75 @@ void set_max_fd(int new_fd, int *max_fd) {
     }
 }
 
+// char *reverse_strstr(char *haystack, const char *needle) {
+//     if (!*needle) {
+//         return (char *)haystack;
+//     }
+
+//     char *result = NULL;
+//     char *current;
+
+//     while ((current = strstr(haystack, needle)) != NULL) {
+//         result = current;
+//         haystack = current + 1;
+//     }
+
+//     return result;
+// }
+
+void inject_script_into_html(char *response, size_t response_size) {
+    const char *body_tag = "</body>";
+    char *pos = strstr(response, body_tag);
+    // char *pos = reverse_strstr(response, body_tag);
+    if (pos) {
+        const char *script_to_inject = 
+            "<script>"
+            "document.addEventListener('DOMContentLoaded', () => {"
+            "  const factCheckButton = document.createElement('button');"
+            "  factCheckButton.innerText = 'Fact Check Selected';"
+            "  factCheckButton.style.position = 'fixed';"
+            "  factCheckButton.style.bottom = '10px';"
+            "  factCheckButton.style.right = '10px';"
+            "  document.body.appendChild(factCheckButton);"
+            ""
+            "  factCheckButton.addEventListener('click', async () => {"
+            "    const selection = window.getSelection().toString();"
+            "    if (selection) {"
+            "      const response = await fetch('/fact-check', {"
+            "        method: 'POST',"
+            "        headers: { 'Content-Type': 'application/json' },"
+            "        body: JSON.stringify({ text: selection })"
+            "      });"
+            "      const result = await response.json();"
+            "      alert(`Fact Check Result: ${result.factCheck}`);"
+            "    }"
+            "  });"
+            "});"
+            "</script>";
+
+        // Create a new buffer with the injected script
+        size_t new_size = response_size + strlen(script_to_inject);
+        char *new_response = malloc(new_size + 1);
+        if (!new_response) {
+            perror("malloc failed");
+            return;
+        }
+
+        // Copy up to the </body> tag
+        size_t prefix_length = pos - response;
+        strncpy(new_response, response, prefix_length);
+
+        // Inject the script
+        strcpy(new_response + prefix_length, script_to_inject);
+
+        // Append the </body> tag and the rest of the response
+        strcpy(new_response + prefix_length + strlen(script_to_inject), pos);
+
+        // Replace the original response
+        strcpy(response, new_response);
+        free(new_response);
+    }
+}
 
 
 

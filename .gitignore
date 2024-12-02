@@ -9,3 +9,4 @@ tmp/
 *.srl
 spec.pdf
 LLM_test
+venv
