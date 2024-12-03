@@ -244,15 +244,8 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
     }
 }
 
-char *inject_encoding_method(char *buffer, unsigned size) 
-{
-    (void)buffer;
-    (void)size;
-    return NULL;
-}
-
 bool read_client_request(int client_fd, Node **ssl_contexts, 
-    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache, Node **all_messages) {
+    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache, Node **all_messages, int LLM_sockfd, struct sockaddr_un python_addr) {
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, client_fd);
     (void)cache;
     
@@ -290,17 +283,60 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                         if (n <= 0) {
                             return false;
                         }
-                        printf("Wrote to server: %s\n", curr_message->content);
                     }
                 }
                 else {
                     // Send to LLM
-                    char *example = "HTTP/1.1 200 OK\r\n"
-                                    "Content-Type: application/json\r\n"
-                                    "Content-Length: 35\r\n"
-                                    "\r\n"
-                                    "{\"factCheck\": \"I will fact check!\"}";
-                    n = SSL_write(curr_context->client_ssl, example, strlen(example));
+                    // char *example = "HTTP/1.1 200 OK\r\n"
+                    //                 "Content-Type: application/json\r\n"
+                    //                 "Content-Length: 35\r\n"
+                    //                 "\r\n"
+                    //                 "{\"factCheck\": \"I will fact check!\"}";
+                    // n = SSL_write(curr_context->client_ssl, example, strlen(example));
+
+
+
+                    printf("Sending to Python script: %s\n", curr_message->content);
+                    if (sendto(LLM_sockfd, curr_message->content, curr_message->content_length, 0, (struct sockaddr *)&python_addr, sizeof(python_addr)) == -1) {
+                        printf("\nFAILED TO SEND TO PYTHON SCRIPT\n");
+                        close(LLM_sockfd);
+                        return false;
+                    }
+                    printf("Waiting for a response from Python script\n");
+
+                    socklen_t addr_len = sizeof(python_addr);
+                    char LLM_buffer[BUFFER_SIZE];
+                    int num_bytes_from_LLM = recvfrom(LLM_sockfd, LLM_buffer, sizeof(LLM_buffer), 0, (struct sockaddr *)&python_addr, &addr_len);
+                    printf("Received %d bytes from Python script\n", num_bytes_from_LLM);
+                    if (num_bytes_from_LLM == -1) {
+                        perror("Receive failed");
+                        close(LLM_sockfd);
+                        return 1;
+                    }
+
+
+                    // char *example = "HTTP/1.1 200 OK\r\n"
+                    //                 "Content-Type: application/json\r\n"
+                    //                 "Content-Length: 35\r\n"
+                    //                 "\r\n"
+                    //                 "{\"factCheck\": \"I will fact check!\"}";
+                    char *fact_check_response = "HTTP/1.1 200 OK\r\n"
+                                                "Content-Type: application/json\r\n"
+                                                "Content-Length: %d\r\n"
+                                                "\r\n"
+                                                "{\"factCheck\": %s}";
+
+                    char fact_check_response_buffer[20000];
+                    int static_part_length = strlen("{\"factCheck\": }"); // Length of the fixed JSON structure
+                    int content_length = static_part_length + num_bytes_from_LLM;
+                    // snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, num_bytes_from_LLM + strlen("{\"factCheck\": }"), LLM_buffer);
+                    snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, content_length, LLM_buffer);
+                    printf("Sending to client:\n%s\n", fact_check_response_buffer);
+
+                    n = SSL_write(curr_context->client_ssl, fact_check_response_buffer, strlen(fact_check_response_buffer));
+                    if (n <= 0) {
+                        return false;
+                    }
                 }
                 
                 removeNode(all_messages, curr_message);
@@ -524,7 +560,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
         curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
         if (curr_message->msg_complete) {
-            inject_script_into_html(curr_message);
+            if (curr_message->content != NULL) {
+                inject_script_into_html(curr_message);
+            }
 
             if (curr_message->content_type == CHUNKED_ENCODING) {
                 update_message_header_no_chunk(curr_message);
@@ -934,7 +972,71 @@ void inject_script_into_html(message *msg) {
     char *pos = strstr((const char *)msg->content, body_tag);
 
     if (pos) {
-        const char *script_to_inject = 
+        // const char *script_to_inject = 
+        //     "<script>"
+        //     "document.addEventListener('DOMContentLoaded', () => {"
+        //     "  const factCheckButton = document.createElement('button');"
+        //     "  factCheckButton.innerText = 'Fact Check Selected';"
+        //     "  factCheckButton.style.position = 'fixed';"
+        //     "  factCheckButton.style.bottom = '10px';"
+        //     "  factCheckButton.style.right = '10px';"
+        //     "  factCheckButton.style.zIndex = '9999';"
+        //     "  factCheckButton.style.padding = '15px';"
+        //     "  factCheckButton.style.backgroundColor = 'white';"
+        //     "  factCheckButton.style.borderRadius = '5px';"
+        //     "  factCheckButton.style.cursor = 'pointer';"
+        //     "  factCheckButton.style.color = 'black';"
+        //     "  factCheckButton.style.border = 'none';"
+        //     "  factCheckButton.style.fontSize = 'large';"
+        //     "  factCheckButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
+        //     "  factCheckButton.style.transition = 'background-color 0.3s';"
+        //     "  factCheckButton.addEventListener('mouseover', () => {"
+        //            " factCheckButton.style.backgroundColor = 'gainsboro';"
+        //         "});"
+        //         "factCheckButton.addEventListener('mouseout', () => {"
+        //             "factCheckButton.style.backgroundColor = 'white';"
+        //         "});"
+        //     "  document.body.appendChild(factCheckButton);"
+        //     ""
+        //     "  factCheckButton.addEventListener('click', async () => {"
+        //     "    const selection = window.getSelection().toString();"
+        //     "    if (selection) {"
+        //     "      const response = await fetch('/fact-check', {"
+        //     "        method: 'POST',"
+        //     "        headers: { 'Content-Type': 'application/json' },"
+        //     "        body: JSON.stringify({ text: selection })"
+        //     "      });"
+        //     "      const result = await response.json();"
+        //     ""
+        //     "      const popupDiv = document.createElement('div');"
+        //     "      popupDiv.style.position = 'fixed';"
+        //     "      popupDiv.style.top = '50%';"
+        //     "      popupDiv.style.left = '50%';"
+        //     "      popupDiv.style.transform = 'translate(-50%, -50%)';"
+        //     "      popupDiv.style.padding = '20px';"
+        //     "      popupDiv.style.backgroundColor = 'white';"
+        //     "      popupDiv.style.color = 'black';"
+        //     "      popupDiv.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
+        //     "      popupDiv.style.zIndex = '10000';"
+        //     "      popupDiv.style.borderRadius = '8px';"
+        //     "      popupDiv.innerHTML = "
+        //     "        `<div style='display: flex; justify-content: space-between; align-items: center;'>"
+        //     "          <button style='background: none; border: none; font-size: 18px; cursor: pointer; color: black'>&times;</button>"
+        //     "        </div>"
+        //     "        <p style='font-size: large'>${result.factCheck}</p>`;"
+        //     ""
+        //     "      const closeButton = popupDiv.querySelector('button');"
+        //     "      closeButton.addEventListener('click', () => {"
+        //     "        document.body.removeChild(popupDiv);"
+        //     "      });"
+        //     ""
+        //     "      document.body.appendChild(popupDiv);"
+        //     "    }"
+        //     "  });"
+        //     "});"
+        //     "</script>";
+
+const char *script_to_inject = 
             "<script>"
             "document.addEventListener('DOMContentLoaded', () => {"
             "  const factCheckButton = document.createElement('button');"
@@ -943,27 +1045,67 @@ void inject_script_into_html(message *msg) {
             "  factCheckButton.style.bottom = '10px';"
             "  factCheckButton.style.right = '10px';"
             "  factCheckButton.style.zIndex = '9999';"
-            "  factCheckButton.style.padding = '10px';"
-            "  factCheckButton.style.backgroundColor = 'blue';"
+            "  factCheckButton.style.padding = '15px';"
+            "  factCheckButton.style.backgroundColor = 'white';"
             "  factCheckButton.style.borderRadius = '5px';"
             "  factCheckButton.style.cursor = 'pointer';"
-            "  factCheckButton.style.color = 'white';"
+            "  factCheckButton.style.color = 'black';"
             "  factCheckButton.style.border = 'none';"
+            "  factCheckButton.style.fontSize = 'large';"
+            "  factCheckButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
+            "  factCheckButton.style.transition = 'background-color 0.3s';"
+            "  factCheckButton.addEventListener('mouseover', () => {"
+            "     factCheckButton.style.backgroundColor = 'gainsboro';"
+            "  });"
+            "  factCheckButton.addEventListener('mouseout', () => {"
+            "     factCheckButton.style.backgroundColor = 'white';"
+            "  });"
             "  document.body.appendChild(factCheckButton);"
+            ""
             "  factCheckButton.addEventListener('click', async () => {"
             "    const selection = window.getSelection().toString();"
             "    if (selection) {"
-            "      const response = await fetch('/fact-check', {"
-            "        method: 'POST',"
-            "        headers: { 'Content-Type': 'application/json' },"
-            "        body: JSON.stringify({ text: selection })"
+            "      const popupDiv = document.createElement('div');"
+            "      popupDiv.style.position = 'fixed';"
+            "      popupDiv.style.top = '50%';"
+            "      popupDiv.style.left = '50%';"
+            "      popupDiv.style.transform = 'translate(-50%, -50%)';"
+            "      popupDiv.style.padding = '20px';"
+            "      popupDiv.style.width = '60%';"
+            "      popupDiv.style.backgroundColor = 'white';"
+            "      popupDiv.style.color = 'black';"
+            "      popupDiv.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
+            "      popupDiv.style.zIndex = '10000';"
+            "      popupDiv.style.borderRadius = '8px';"
+            "      popupDiv.innerHTML = "
+            "        `<div style='display: flex; justify-content: space-between; align-items: center;'>"
+            "          <button style='background: none; border: none; font-size: 18px; cursor: pointer; color: black'>&times;</button>"
+            "        </div>"
+            "        <p style='font-size: large'><strong>Fact checking...</strong></p>`;"
+            ""
+            "      const closeButton = popupDiv.querySelector('button');"
+            "      closeButton.addEventListener('click', () => {"
+            "        document.body.removeChild(popupDiv);"
             "      });"
-            "      const result = await response.json();"
-            "      alert(`Fact Check Result: ${result.factCheck}`);"
+            ""
+            "      document.body.appendChild(popupDiv);"
+            ""
+            "      try {"
+            "        const response = await fetch('/fact-check', {"
+            "          method: 'POST',"
+            "          headers: { 'Content-Type': 'application/json' },"
+            "          body: JSON.stringify({ text: selection })"
+            "        });"
+            "        const result = await response.json();"
+            "        popupDiv.querySelector('p').innerHTML = result.factCheck;"
+            "      } catch (error) {"
+            "        popupDiv.querySelector('p').innerHTML = 'An error occurred. Please try again.';"
+            "      }"
             "    }"
             "  });"
             "});"
             "</script>";
+
 
         size_t script_length = strlen(script_to_inject);
         size_t new_content_length = msg->content_length + script_length;

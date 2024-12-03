@@ -17,6 +17,8 @@
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 10
 #define TIMEOUT_US 0
+#define SOCKET_PATH "/tmp/c_dgram_socket"
+#define PYTHON_SOCKET_PATH "/tmp/python_dgram_socket"
 
 void client_disconnect(int client_filedes, Node **ssl_contexts, fd_set *active_read_fd_set);
 
@@ -49,6 +51,37 @@ int setup_tcp_server_socket(int portno) {
     return parentfd;
 }
 
+int initialize_LLM_communication(struct sockaddr_un *python_addr) {
+    int sockfd;
+
+    // Create a Unix domain datagram socket
+    sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (sockfd == -1) {
+        perror("Socket creation failed");
+        return -1;
+    }
+
+    // Set up the server address
+    struct sockaddr_un server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sun_family = AF_UNIX;
+    strncpy(server_addr.sun_path, SOCKET_PATH, sizeof(server_addr.sun_path) - 1);
+
+    // Bind the socket
+    unlink(SOCKET_PATH);
+    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        perror("Bind failed");
+        close(sockfd);
+        return -1;
+    }
+
+    // Set up the Python client address
+    memset(python_addr, 0, sizeof(*python_addr));
+    python_addr->sun_family = AF_UNIX;
+    strncpy(python_addr->sun_path, PYTHON_SOCKET_PATH, sizeof(python_addr->sun_path) - 1);
+
+    return sockfd;
+}
 
 int main(int argc, char **argv)
 {
@@ -69,6 +102,10 @@ int main(int argc, char **argv)
     printf("Proxy listening on port %d\n", portno);
     
     int parentfd = setup_tcp_server_socket(portno);
+
+    struct sockaddr_un python_addr;
+    // socklen_t python_addr_len;
+    int LLM_sockfd = initialize_LLM_communication(&python_addr);
 
     struct sockaddr_in clientaddr;
 
@@ -151,7 +188,7 @@ int main(int argc, char **argv)
                 
                 else {
                     // printf("\nReading from client %d\n", i);
-                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, NULL, &all_messages)) {
+                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, NULL, &all_messages, LLM_sockfd, python_addr)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 }

@@ -10,4 +10,5 @@ You will be given a piece of text that may or may not be true.
 You will also be given a Wikipedia article that is accepted to be true.
 Your job is to compare the information in the text with the information in the Wikipedia article.
 Return an explanation of whether the text is true or false, and provide evidence to support your conclusion.
+DO NOT write more than 200 words, and DO NOT waste space repeating the claim itself.
 '''

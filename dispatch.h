@@ -20,7 +20,7 @@ enum {
     CHUNK_DONE
 };
 
-bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd, Cache_T *cache, Node **all_messages);
+bool read_client_request(int client_fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd, Cache_T *cache, Node **all_messages, int LLM_sockfd, struct sockaddr_un python_addr);
 
 int client_or_server_fd(Node *ssl_contexts, int fd);
 

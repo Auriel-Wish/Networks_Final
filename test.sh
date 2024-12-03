@@ -11,5 +11,9 @@ trap cleanup EXIT
 
 make clean > /dev/null
 make > /dev/null
-./a.out 1026
+./a.out 1026 &
+sleep 0.5
+python3 fact_check.py &
+sleep 0.5
+python3 ProxyAgent.py &
 wait

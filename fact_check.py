@@ -6,6 +6,8 @@ import socket
 import os
 from fact_check_prompts import *
 
+MAX_ARTICLE_LENGTH = 10000
+
 def search_wikipedia(query, max_results=5, delay=2):
     """
     Searches for Wikipedia articles based on a query and retrieves their content.
@@ -29,7 +31,7 @@ def search_wikipedia(query, max_results=5, delay=2):
         articles_content = {}
         for title in search_results:
             try:
-                print(f"Fetching content for: {title}")
+                # print(f"Fetching content for: {title}")
                 # Get the full article text
                 content = wikipedia.page(title, auto_suggest=False).content
                 articles_content[title] = content
@@ -46,7 +48,7 @@ def search_wikipedia(query, max_results=5, delay=2):
 
 def make_LLM_request(request, url):
     try:
-        print(f"Initiating request: {request}")
+        # print(f"Initiating request: {request}")
         response = requests.post(url, json=request)
 
         if response.status_code == 200:
@@ -80,9 +82,7 @@ def get_LLM_fact_check_response(to_fact_check):
     while not successful_wiki_query:
         print("Generating Wikipedia query...")
         wiki_query = make_LLM_request(request, url)
-        if wiki_query:
-            print(f"Wikipedia query: {wiki_query}")
-        else:
+        if not wiki_query:
             print("Wikipedia query generation unsuccessful.")
             break
 
@@ -95,7 +95,7 @@ def get_LLM_fact_check_response(to_fact_check):
 
                 for title, content in articles.items():
                     total_fact_check_content += f"Title: {title}\n\n"
-                    total_fact_check_content += content
+                    total_fact_check_content += content[:MAX_ARTICLE_LENGTH]  # Limit the content length
                     total_fact_check_content += "\n\n\n"
             else:
                 print("No articles were retrieved. Trying a different query...")
@@ -119,9 +119,33 @@ def get_LLM_fact_check_response(to_fact_check):
                 print("Fact checking the statement...")
                 fact_check_response = make_LLM_request(request, url)
                 if fact_check_response:
-                    print(fact_check_response)
-                else:
-                    print("Fact check unsuccessful.")
+                    return fact_check_response
+                
+    return "Failed to fact check the statement."
+
+def fix_response_format(response):
+    """
+    Ensures the input string is a valid JSON value for an HTTP response.
+
+    Args:
+        response (str): The input string to be fixed.
+
+    Returns:
+        str: A JSON-compliant string that can be used in an HTTP response.
+    """
+    response = response.replace('"', "")
+    response = response.replace('\n', "<br>")
+    response = response.replace('\\n', "<br>")
+    # response = response.replace('\\', '')
+    print(response)
+    try:
+        # Attempt to convert the response to a valid JSON string
+        json_compatible_string = json.dumps(response)
+    except (TypeError, ValueError):
+        # If the input is not valid JSON, sanitize it
+        json_compatible_string = json.dumps("NOT JSON COMPATIBLE")
+
+    return json_compatible_string
 
 def main():
     # Define the paths for the Unix domain socket
@@ -147,12 +171,27 @@ def main():
                 print("No data received. Exiting...")
                 break
 
-            to_fact_check = data.decode()
+            data = data.decode()
+            data = json.loads(data)
+            to_fact_check = data['text']
             print(f"Received: {to_fact_check}")
 
             # Respond to the C script
-            fact_checker_response = get_LLM_fact_check_response(to_fact_check)
-            sock.sendto(fact_checker_response.encode(), addr)
+            fact_checker_response = "<strong>"
+            fact_checker_response += to_fact_check[:100]
+            if len(to_fact_check) > 100:
+                fact_checker_response += "..."
+            fact_checker_response += "</strong>"
+            fact_checker_response += "\n\n"
+            fact_checker_response += get_LLM_fact_check_response(to_fact_check)
+            fact_checker_response = fix_response_format(fact_checker_response)
+            print(fact_checker_response)
+            if fact_checker_response:
+                n = sock.sendto(fact_checker_response.encode(), addr)
+                print(f"Sent {n} bytes back to {addr}")
+            else:
+                n = sock.sendto("An error occurred while fact checking.".encode(), addr)
+                print(f"Sent {n} bytes back to {addr}")
 
     finally:
         sock.close()
