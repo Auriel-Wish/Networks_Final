@@ -294,15 +294,14 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                     }
                 }
                 else {
-                    // printf("%s\n", curr_message->header);
-                    // printf("%s\n", curr_message->content);
                     // Send to LLM
                     char *example = "HTTP/1.1 200 OK\r\n"
-                                     "Content-Type: application/json\r\n"
-                                     "Content-Length: 35\r\n"
-                                     "\r\n"
-                                     "{'factCheck': 'I will fact check!'}";
+                                    "Content-Type: application/json\r\n"
+                                    "Content-Length: 35\r\n"
+                                    "\r\n"
+                                    "{\"factCheck\": \"I will fact check!\"}";
                     n = SSL_write(curr_context->client_ssl, example, strlen(example));
+                    printf("Wrote %d bytes to client\n", n);
                     printf("Wrote to client: %s\n", example);
                 }
                 
@@ -527,13 +526,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
         curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
         if (curr_message->msg_complete) {
-            // bool decompression_succ = decompress(curr_message);
-            // if (decompression_succ) {
-            //     printf("Decompression successful\n");
             inject_script_into_html(curr_message);
-            //     process_message(curr_message);
-            //     printf("Header: %s", curr_message->header);
-            // }
 
             if (curr_message->content_type == CHUNKED_ENCODING) {
                 update_message_header_no_chunk(curr_message);
