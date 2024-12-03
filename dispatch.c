@@ -278,16 +278,32 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
             message *curr_message = get_message_by_filedes(*all_messages, curr_context->client_fd);
             curr_message = insert_new_data(&curr_message, buffer, curr_context->client_fd, all_messages, n);
             if (curr_message->msg_complete) {
-                n = SSL_write(curr_context->server_ssl, curr_message->header, curr_message->header_length);
-                if (n <= 0) {
-                    return false;
-                }
-                if (curr_message->content_length > 0) {
-                    printf("Content length: %d\n", curr_message->content_length);
-                    n = SSL_write(curr_context->server_ssl, curr_message->content, curr_message->content_length);
+                // Check if "fact-check" appears in the first line of the header
+                char *fact_check = strstr(curr_message->header, "fact-check");
+                if (fact_check == NULL) {
+                    n = SSL_write(curr_context->server_ssl, curr_message->header, curr_message->header_length);
                     if (n <= 0) {
                         return false;
                     }
+                    if (curr_message->content_length > 0) {
+                        n = SSL_write(curr_context->server_ssl, curr_message->content, curr_message->content_length);
+                        if (n <= 0) {
+                            return false;
+                        }
+                        printf("Wrote to server: %s\n", curr_message->content);
+                    }
+                }
+                else {
+                    // printf("%s\n", curr_message->header);
+                    // printf("%s\n", curr_message->content);
+                    // Send to LLM
+                    char *example = "HTTP/1.1 200 OK\r\n"
+                                     "Content-Type: application/json\r\n"
+                                     "Content-Length: 35\r\n"
+                                     "\r\n"
+                                     "{'factCheck': 'I will fact check!'}";
+                    n = SSL_write(curr_context->client_ssl, example, strlen(example));
+                    printf("Wrote to client: %s\n", example);
                 }
                 
                 removeNode(all_messages, curr_message);
@@ -514,7 +530,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             // bool decompression_succ = decompress(curr_message);
             // if (decompression_succ) {
             //     printf("Decompression successful\n");
-            //     inject_script_into_html(curr_message);
+            inject_script_into_html(curr_message);
             //     process_message(curr_message);
             //     printf("Header: %s", curr_message->header);
             // }
@@ -613,10 +629,10 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
         curr_message->msg_complete = false;
         curr_message->content_type = -1;
 
-        curr_message->chunk_state = CHUNK_SIZE;       // Start state for chunked encoding
-        curr_message->chunk_size = 0;                // No chunk size initially
-        curr_message->bytes_read_in_chunk = 0;       // No bytes read initially
-        memset(curr_message->chunk_size_str, 0, sizeof(curr_message->chunk_size_str)); // Clear the array
+        curr_message->chunk_state = CHUNK_SIZE;
+        curr_message->chunk_size = 0;
+        curr_message->bytes_read_in_chunk = 0;
+        memset(curr_message->chunk_size_str, 0, sizeof(curr_message->chunk_size_str));
         curr_message->chunk_size_str_index = 0; 
         append(all_messages, curr_message);
     }
@@ -688,8 +704,6 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
         }
         // else if (curr_message->content_type == CHUNKED_ENCODING && n > 0) {
         else if (curr_message->content_type == CHUNKED_ENCODING) {
-            printf("Chunked encoding\n");
-            printf("Received %d bytes\n", n);
             insert_buffer_into_message(curr_message, buffer, n);
         }
     }
@@ -829,7 +843,6 @@ void insert_buffer_into_message(message *msg, char *buffer, int buffer_length) {
                 // All chunks received; optionally process trailers here
                 i = buffer_length; // Consume remaining data
                 msg->msg_complete = true;
-                printf("\n\nChunked encoding complete!!!\n\n");
                 break;
 
             default:
@@ -938,6 +951,13 @@ void inject_script_into_html(message *msg) {
             "  factCheckButton.style.position = 'fixed';"
             "  factCheckButton.style.bottom = '10px';"
             "  factCheckButton.style.right = '10px';"
+            "  factCheckButton.style.zIndex = '9999';"
+            "  factCheckButton.style.padding = '10px';"
+            "  factCheckButton.style.backgroundColor = 'blue';"
+            "  factCheckButton.style.borderRadius = '5px';"
+            "  factCheckButton.style.cursor = 'pointer';"
+            "  factCheckButton.style.color = 'white';"
+            "  factCheckButton.style.border = 'none';"
             "  document.body.appendChild(factCheckButton);"
             "  factCheckButton.addEventListener('click', async () => {"
             "    const selection = window.getSelection().toString();"
