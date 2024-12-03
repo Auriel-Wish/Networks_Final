@@ -152,7 +152,7 @@ void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context)
 
     // Perform the TLS handshake
     if (SSL_connect(server_ssl) <= 0) {
-        // printf("SSL connection failed\n");
+        printf("SSL connection failed to server\n");
         ERR_print_errors_fp(stderr);
         SSL_free(server_ssl);
         close(server_fd);
@@ -212,7 +212,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(client_ssl) <= 0) {
-            // printf("\nSSL handshake failed\n");
+            printf("\nSSL handshake failed to client\n");
             ERR_print_errors_fp(stderr);
             SSL_shutdown(client_ssl);
             SSL_free(client_ssl);
@@ -296,30 +296,24 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
 
 
 
-                    printf("Sending to Python script: %s\n", curr_message->content);
+                    // printf("Sending to Python script: %s\n", curr_message->content);
                     if (sendto(LLM_sockfd, curr_message->content, curr_message->content_length, 0, (struct sockaddr *)&python_addr, sizeof(python_addr)) == -1) {
                         printf("\nFAILED TO SEND TO PYTHON SCRIPT\n");
                         close(LLM_sockfd);
                         return false;
                     }
-                    printf("Waiting for a response from Python script\n");
+                    // printf("Waiting for a response from Python script\n");
 
                     socklen_t addr_len = sizeof(python_addr);
                     char LLM_buffer[BUFFER_SIZE];
                     int num_bytes_from_LLM = recvfrom(LLM_sockfd, LLM_buffer, sizeof(LLM_buffer), 0, (struct sockaddr *)&python_addr, &addr_len);
-                    printf("Received %d bytes from Python script\n", num_bytes_from_LLM);
+                    // printf("Received %d bytes from Python script\n", num_bytes_from_LLM);
                     if (num_bytes_from_LLM == -1) {
                         perror("Receive failed");
                         close(LLM_sockfd);
                         return 1;
                     }
 
-
-                    // char *example = "HTTP/1.1 200 OK\r\n"
-                    //                 "Content-Type: application/json\r\n"
-                    //                 "Content-Length: 35\r\n"
-                    //                 "\r\n"
-                    //                 "{\"factCheck\": \"I will fact check!\"}";
                     char *fact_check_response = "HTTP/1.1 200 OK\r\n"
                                                 "Content-Type: application/json\r\n"
                                                 "Content-Length: %d\r\n"
@@ -329,9 +323,8 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                     char fact_check_response_buffer[20000];
                     int static_part_length = strlen("{\"factCheck\": }"); // Length of the fixed JSON structure
                     int content_length = static_part_length + num_bytes_from_LLM;
-                    // snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, num_bytes_from_LLM + strlen("{\"factCheck\": }"), LLM_buffer);
                     snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, content_length, LLM_buffer);
-                    printf("Sending to client:\n%s\n", fact_check_response_buffer);
+                    // printf("Sending to client:\n%s\n", fact_check_response_buffer);
 
                     n = SSL_write(curr_context->client_ssl, fact_check_response_buffer, strlen(fact_check_response_buffer));
                     if (n <= 0) {
@@ -972,71 +965,7 @@ void inject_script_into_html(message *msg) {
     char *pos = strstr((const char *)msg->content, body_tag);
 
     if (pos) {
-        // const char *script_to_inject = 
-        //     "<script>"
-        //     "document.addEventListener('DOMContentLoaded', () => {"
-        //     "  const factCheckButton = document.createElement('button');"
-        //     "  factCheckButton.innerText = 'Fact Check Selected';"
-        //     "  factCheckButton.style.position = 'fixed';"
-        //     "  factCheckButton.style.bottom = '10px';"
-        //     "  factCheckButton.style.right = '10px';"
-        //     "  factCheckButton.style.zIndex = '9999';"
-        //     "  factCheckButton.style.padding = '15px';"
-        //     "  factCheckButton.style.backgroundColor = 'white';"
-        //     "  factCheckButton.style.borderRadius = '5px';"
-        //     "  factCheckButton.style.cursor = 'pointer';"
-        //     "  factCheckButton.style.color = 'black';"
-        //     "  factCheckButton.style.border = 'none';"
-        //     "  factCheckButton.style.fontSize = 'large';"
-        //     "  factCheckButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
-        //     "  factCheckButton.style.transition = 'background-color 0.3s';"
-        //     "  factCheckButton.addEventListener('mouseover', () => {"
-        //            " factCheckButton.style.backgroundColor = 'gainsboro';"
-        //         "});"
-        //         "factCheckButton.addEventListener('mouseout', () => {"
-        //             "factCheckButton.style.backgroundColor = 'white';"
-        //         "});"
-        //     "  document.body.appendChild(factCheckButton);"
-        //     ""
-        //     "  factCheckButton.addEventListener('click', async () => {"
-        //     "    const selection = window.getSelection().toString();"
-        //     "    if (selection) {"
-        //     "      const response = await fetch('/fact-check', {"
-        //     "        method: 'POST',"
-        //     "        headers: { 'Content-Type': 'application/json' },"
-        //     "        body: JSON.stringify({ text: selection })"
-        //     "      });"
-        //     "      const result = await response.json();"
-        //     ""
-        //     "      const popupDiv = document.createElement('div');"
-        //     "      popupDiv.style.position = 'fixed';"
-        //     "      popupDiv.style.top = '50%';"
-        //     "      popupDiv.style.left = '50%';"
-        //     "      popupDiv.style.transform = 'translate(-50%, -50%)';"
-        //     "      popupDiv.style.padding = '20px';"
-        //     "      popupDiv.style.backgroundColor = 'white';"
-        //     "      popupDiv.style.color = 'black';"
-        //     "      popupDiv.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
-        //     "      popupDiv.style.zIndex = '10000';"
-        //     "      popupDiv.style.borderRadius = '8px';"
-        //     "      popupDiv.innerHTML = "
-        //     "        `<div style='display: flex; justify-content: space-between; align-items: center;'>"
-        //     "          <button style='background: none; border: none; font-size: 18px; cursor: pointer; color: black'>&times;</button>"
-        //     "        </div>"
-        //     "        <p style='font-size: large'>${result.factCheck}</p>`;"
-        //     ""
-        //     "      const closeButton = popupDiv.querySelector('button');"
-        //     "      closeButton.addEventListener('click', () => {"
-        //     "        document.body.removeChild(popupDiv);"
-        //     "      });"
-        //     ""
-        //     "      document.body.appendChild(popupDiv);"
-        //     "    }"
-        //     "  });"
-        //     "});"
-        //     "</script>";
-
-const char *script_to_inject = 
+        const char *script_to_inject = 
             "<script>"
             "document.addEventListener('DOMContentLoaded', () => {"
             "  const factCheckButton = document.createElement('button');"

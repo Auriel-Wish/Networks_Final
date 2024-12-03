@@ -165,7 +165,6 @@ def main():
 
         # Continuous loop to wait for data
         while True:
-            print("Waiting for a message...")
             data, addr = sock.recvfrom(10000)
             if not data:
                 print("No data received. Exiting...")
@@ -174,7 +173,7 @@ def main():
             data = data.decode()
             data = json.loads(data)
             to_fact_check = data['text']
-            print(f"Received: {to_fact_check}")
+            # print(f"Received: {to_fact_check}")
 
             # Respond to the C script
             fact_checker_response = "<strong>"
@@ -185,13 +184,13 @@ def main():
             fact_checker_response += "\n\n"
             fact_checker_response += get_LLM_fact_check_response(to_fact_check)
             fact_checker_response = fix_response_format(fact_checker_response)
-            print(fact_checker_response)
+            # print(fact_checker_response)
             if fact_checker_response:
                 n = sock.sendto(fact_checker_response.encode(), addr)
-                print(f"Sent {n} bytes back to {addr}")
+                # print(f"Sent {n} bytes back to {addr}")
             else:
                 n = sock.sendto("An error occurred while fact checking.".encode(), addr)
-                print(f"Sent {n} bytes back to {addr}")
+                # print(f"Sent {n} bytes back to {addr}")
 
     finally:
         sock.close()

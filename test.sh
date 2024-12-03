@@ -3,6 +3,11 @@ if [ -n "$PIDS" ]; then
     kill -9 $PIDS > /dev/null
 fi
 
+PIDS=$(lsof -t -i:5001)
+if [ -n "$PIDS" ]; then
+    kill -9 $PIDS > /dev/null
+fi
+
 # Source the cleanup function
 source ./cleanup.sh
 
