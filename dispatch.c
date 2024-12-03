@@ -301,8 +301,6 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                                     "\r\n"
                                     "{\"factCheck\": \"I will fact check!\"}";
                     n = SSL_write(curr_context->client_ssl, example, strlen(example));
-                    printf("Wrote %d bytes to client\n", n);
-                    printf("Wrote to client: %s\n", example);
                 }
                 
                 removeNode(all_messages, curr_message);

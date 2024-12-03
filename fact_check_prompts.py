@@ -2,7 +2,7 @@ make_query_prompt = '''
 You will be given a piece of text that may or may not be true.
 The goal is to find Wikipedia articles related to the topic and verify the information.
 You're job is to return a Wikipedia query that, when we submit the query to
-the Wikipedia API, will help me find relevant articles.
+the Wikipedia API, will help me find relevant articles. ONLY RETURN THE QUERY ITSELF.
 '''
 
 verify_information_prompt = '''

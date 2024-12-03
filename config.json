@@ -1,0 +1,6 @@
+{
+  "port": "5001",
+  "address": "0.0.0.0",  
+  "apiKey": "comp112vsL2ZaTDp8vNru3dCWLSX1UcoSsIjH9wtcMix3Jp",
+  "endPoint": "wss://a08va412jc.execute-api.us-east-1.amazonaws.com/dev/"
+}

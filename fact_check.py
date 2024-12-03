@@ -1,5 +1,9 @@
 import wikipedia
 import time
+import json
+import requests
+import socket
+import os
 from fact_check_prompts import *
 
 def search_wikipedia(query, max_results=5, delay=2):
@@ -20,7 +24,7 @@ def search_wikipedia(query, max_results=5, delay=2):
         search_results = wikipedia.search(query, results=max_results)
         if not search_results:
             print("No articles found for the query.")
-            return {}
+            return None
 
         articles_content = {}
         for title in search_results:
@@ -40,18 +44,119 @@ def search_wikipedia(query, max_results=5, delay=2):
         print(f"An error occurred while searching Wikipedia: {e}")
         return {}
 
+def make_LLM_request(request, url):
+    try:
+        print(f"Initiating request: {request}")
+        response = requests.post(url, json=request)
+
+        if response.status_code == 200:
+            return response.text
+        else:
+            print(f"Error: Received response code {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred: {e}")
+    return None
+
+def get_LLM_fact_check_response(to_fact_check):
+    with open('config.json', 'r') as file:
+        config_proxy_agent = json.load(file)
+
+    port = int(config_proxy_agent['port'])
+    address = config_proxy_agent['address']
+    url = f"http://{address}:{port}/post"
+
+    # to_fact_check = "The capital of America is New York City."
+    # to_fact_check = "Steve Harvey is the richest man in the world."
+
+    request = {
+        'model': '4o-mini',
+        'system': make_query_prompt,
+        'query': to_fact_check,
+        'temperature': 0.7,
+    }
+
+    successful_wiki_query = False
+
+    while not successful_wiki_query:
+        print("Generating Wikipedia query...")
+        wiki_query = make_LLM_request(request, url)
+        if wiki_query:
+            print(f"Wikipedia query: {wiki_query}")
+        else:
+            print("Wikipedia query generation unsuccessful.")
+            break
+
+        if wiki_query:
+            articles = search_wikipedia(wiki_query, max_results=2)
+
+            total_fact_check_content = ""
+            if articles:
+                successful_wiki_query = True
+
+                for title, content in articles.items():
+                    total_fact_check_content += f"Title: {title}\n\n"
+                    total_fact_check_content += content
+                    total_fact_check_content += "\n\n\n"
+            else:
+                print("No articles were retrieved. Trying a different query...")
+                request['query'] = f"{to_fact_check}\n\nThe previously generated query was unsuccessful. Please try again from a different perspective. Previous query: {wiki_query}"
+                request['temperature'] += 0.3
+                if request['temperature'] > 2.0:
+                    print("Failed to generate a successful Wikipedia query.")
+                    break
+                continue
+            
+            if total_fact_check_content != "" and successful_wiki_query:
+                full_query = f"Is the statement '{to_fact_check}' true?\n\n"
+                full_query += f"Here is the ground truth evidence:\n\n{total_fact_check_content}"
+
+                request = {
+                    'model': '4o-mini',
+                    'system': verify_information_prompt,
+                    'query': full_query,
+                }
+
+                print("Fact checking the statement...")
+                fact_check_response = make_LLM_request(request, url)
+                if fact_check_response:
+                    print(fact_check_response)
+                else:
+                    print("Fact check unsuccessful.")
+
 def main():
-    query = "Python programming"
+    # Define the paths for the Unix domain socket
+    SOCKET_PATH = "/tmp/python_dgram_socket"
 
-    articles = search_wikipedia(query)
+    # Ensure no leftover socket file
+    if os.path.exists(SOCKET_PATH):
+        os.remove(SOCKET_PATH)
 
-    if articles:
-        for title, content in articles.items():
-            print(f"\nTitle: {title}\n")
-            print(content[:500])  # Print the first 500 characters of the article for brevity
-            print("\n" + "-" * 80 + "\n")
-    else:
-        print("No articles were retrieved.")
+    # Create a Unix datagram socket
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+
+    try:
+        # Bind to the socket
+        sock.bind(SOCKET_PATH)
+        print(f"Listening on {SOCKET_PATH}...")
+
+        # Continuous loop to wait for data
+        while True:
+            print("Waiting for a message...")
+            data, addr = sock.recvfrom(10000)
+            if not data:
+                print("No data received. Exiting...")
+                break
+
+            to_fact_check = data.decode()
+            print(f"Received: {to_fact_check}")
+
+            # Respond to the C script
+            fact_checker_response = get_LLM_fact_check_response(to_fact_check)
+            sock.sendto(fact_checker_response.encode(), addr)
+
+    finally:
+        sock.close()
+        os.remove(SOCKET_PATH)
 
 if __name__ == "__main__":
     main()
