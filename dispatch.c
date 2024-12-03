@@ -336,8 +336,10 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         //breakpoint here
 
         if (curr_message->msg_complete) {
-            // if curr_message is a header, the inject function will do nothing
-            inject_script_into_html(curr_message);
+            // Only inject script into content if message is not a header
+            if (curr_message->content != NULL) {
+                inject_script_into_html(curr_message);
+            }
 
             if (curr_message->content_type == CHUNKED_ENCODING) {
                 update_message_header_no_chunk(curr_message);
