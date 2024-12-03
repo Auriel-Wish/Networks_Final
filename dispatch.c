@@ -12,9 +12,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-
 #include <zlib.h>
-#define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
+#include <ctype.h>
+
+#define DECOMPRESSED_BUFFER_SIZE 8192
 #define CHUNK 16384
 
 
@@ -184,6 +185,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 
     // Step 2: Check if it’s a CONNECT request
     if (strncmp(buffer, "CONNECT", 7) == 0) {
+        // If it is a CONNECT request, setup a new SSL context for the client
         char *hostname = strtok(buffer + 8, ":");
         
         SSL_CTX *ctx;
@@ -212,15 +214,12 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(client_ssl) <= 0) {
-            // printf("\nSSL handshake failed\n");
             ERR_print_errors_fp(stderr);
             SSL_shutdown(client_ssl);
             SSL_free(client_ssl);
             close(fd);
             return false;
         }
-
-        // printf("\nSSL handshake with client successful\n");
 
         int port = atoi(strtok(NULL, " "));
         open_new_conn_to_server(hostname, port, &new_context);
@@ -235,20 +234,9 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
     } 
     
     else {
-        // printf("Not a CONNECT request\n");
-        
-        for (int i = 0; i < nbytes; i++) {
-            putchar(buffer[i]);
-        }
+        // Not a connect request        
         return false;
     }
-}
-
-char *inject_encoding_method(char *buffer, unsigned size) 
-{
-    (void)buffer;
-    (void)size;
-    return NULL;
 }
 
 bool read_client_request(int client_fd, Node **ssl_contexts, 
@@ -268,7 +256,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     // Cache_Response_T *resp = get_response_from_cache(cache, curr_context->hostname);
     
     else {
-        // printf("Reading ONE client request\n");
+        // Reading ONE client request
         char buffer[BUFFER_SIZE + 1];
         int n;
 
@@ -277,6 +265,10 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         if (n > 0) {
             message *curr_message = get_message_by_filedes(*all_messages, curr_context->client_fd);
             curr_message = insert_new_data(&curr_message, buffer, curr_context->client_fd, all_messages, n);
+
+            // If curr_message is NULL, we need to know right away.
+            assert(curr_message != NULL);
+
             if (curr_message->msg_complete) {
                 // Check if "fact-check" appears in the first line of the header
                 char *fact_check = strstr(curr_message->header, "fact-check");
@@ -293,6 +285,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                         printf("Wrote to server: %s\n", curr_message->content);
                     }
                 }
+
                 else {
                     // Send to LLM
                     char *example = "HTTP/1.1 200 OK\r\n"
@@ -308,181 +301,19 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                 removeNode(all_messages, curr_message);
             }
 
-            // char *accept_encoding = strstr(buffer, "Accept-Encoding: ");
-            // if (accept_encoding != NULL) {
-            //     char *end_of_line = strstr(accept_encoding, "\r\n");
-            //     if (end_of_line != NULL) {
-            //         size_t prefix_length = accept_encoding - buffer;
-            //         size_t suffix_length = strlen(end_of_line + 2); // +2 to skip \r\n
-            //         memmove(accept_encoding, end_of_line + 2, suffix_length);
-            //         // snprintf(buffer + prefix_length, BUFFER_SIZE - prefix_length, "Accept-Encoding: gzip\r\n%s", end_of_line + 2);
-            //         snprintf(buffer + prefix_length, BUFFER_SIZE - prefix_length, "Accept-Encoding: identity\r\n%s", end_of_line + 2);
-            //     }
-            // }
-
-            // fprintf(stderr, "Printing out the HEADER\n");
-
-            // n = SSL_write(curr_context->server_ssl, buffer, n);
-            // if (n == 0) {
-            //     // printf("Server closed connection\n");
-            //     return false;
-            // }
-            // if (n < 0) {
-            //     // printf("Error writing to server\n");
-            //     return false;
-            // }
-
             return true;
         } else {
             int ssl_error = SSL_get_error(curr_context->client_ssl, n);
             if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
-                // Need to retry the operation later
-                return true; // Keep the connection open
+                // Keep the connection open, need to retry the operation later
+                return true; 
             } else {
-                // Handle other errors
-                // printf("\nClient FD: %d\n", curr_context->client_fd);
-                // printf("SSL_read failed with error code %d\n", ssl_error);
-                return false; // Close the connection
+                // Other error, close the connection
+                return false;
             }
         }
     }
 }
-
-int compress_gzip_message_content(message *msg, unsigned char **compressed, int *compressed_length) {
-    z_stream strm;
-    unsigned char out[CHUNK];
-    int ret;
-    int have;
-    unsigned char *result = NULL;
-    int result_size = 0;
-
-    // Initialize zlib stream
-    strm.zalloc = Z_NULL;
-    strm.zfree = Z_NULL;
-    strm.opaque = Z_NULL;
-
-    // Initialize for GZIP compression
-    ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY);
-    if (ret != Z_OK) {
-        return ret;
-    }
-
-    strm.avail_in = msg->content_length;
-    strm.next_in = msg->content;
-
-    do {
-        strm.avail_out = CHUNK;
-        strm.next_out = out;
-        ret = deflate(&strm, Z_FINISH);
-        if (ret != Z_STREAM_END && ret != Z_OK && ret != Z_BUF_ERROR) {
-            deflateEnd(&strm);
-            free(result);
-            return ret;
-        }
-        have = CHUNK - strm.avail_out;
-        result = realloc(result, result_size + have);
-        if (!result) {
-            deflateEnd(&strm);
-            return Z_MEM_ERROR;
-        }
-        memcpy(result + result_size, out, have);
-        result_size += have;
-    } while (strm.avail_out == 0);
-
-    // Clean up
-    deflateEnd(&strm);
-
-    *compressed = result;
-    *compressed_length = result_size;
-    return Z_OK;
-}
-
-void update_message_header_content_length(message *msg, int new_content_length) {
-    char *cl_pos = strstr(msg->header, "Content-Length: ");
-    if (cl_pos) {
-        char *line_end = strstr(cl_pos, "\r\n");
-        if (line_end) {
-            char new_value[32];
-            snprintf(new_value, sizeof(new_value), "Content-Length: %d", new_content_length);
-            int new_value_len = strlen(new_value);
-            int old_value_len = line_end - cl_pos;
-            memmove(cl_pos + new_value_len, cl_pos + old_value_len, msg->header_length - (cl_pos - msg->header) - old_value_len);
-            memcpy(cl_pos, new_value, new_value_len);
-            msg->header_length += new_value_len - old_value_len;  // Adjust the header length
-        }
-    }
-}
-
-int process_message(message *msg) {
-    unsigned char *compressed_content = NULL;
-    int compressed_length = 0;
-
-    // Compress the content
-    int ret = compress_gzip_message_content(msg, &compressed_content, &compressed_length);
-    if (ret != Z_OK) {
-        fprintf(stderr, "GZIP compression failed with error code: %d\n", ret);
-        return ret;
-    }
-
-    // Update Content-Length in the header
-    update_message_header_content_length(msg, compressed_length);
-
-    // Replace content with compressed content
-    free(msg->content);  // Free the original content
-    msg->content = compressed_content;
-    msg->content_length = compressed_length;
-
-    return 0;
-}
-
-
-bool decompress(message *m) {
-    if (m == NULL || m->content == NULL || m->content_length == 0) {
-        fprintf(stderr, "Message is null or content is empty. Cannot decompress.\n");
-        return false;
-    }
-
-    // Allocate buffer for decompressed data
-    size_t decompressed_size = m->content_length * 4; // Estimate a reasonable expansion factor
-    unsigned char *decompressed_content = malloc(decompressed_size);
-    if (decompressed_content == NULL) {
-        fprintf(stderr, "Failed to allocate memory for decompression.\n");
-        return false;
-    }
-
-    z_stream stream = {0};
-    stream.next_in = m->content;
-    stream.avail_in = m->content_length;
-    stream.next_out = decompressed_content;
-    stream.avail_out = decompressed_size;
-
-    // Initialize zlib for gzip decoding
-    if (inflateInit2(&stream, 16 + MAX_WBITS) != Z_OK) {
-        fprintf(stderr, "Failed to initialize zlib for gzip decompression.\n");
-        free(decompressed_content);
-        return false;
-    }
-
-    int result = inflate(&stream, Z_FINISH);
-    inflateEnd(&stream);
-
-    if (result == Z_STREAM_END) {
-        // Successfully decompressed
-        fprintf(stderr, "Decompressed %lu bytes to %lu bytes.\n", (unsigned long)m->content_length, (unsigned long)stream.total_out);
-
-        // Free the original content and replace it with the decompressed content
-        free(m->content);
-        m->content = decompressed_content;
-        m->content_length = stream.total_out;
-        return true;
-    } else {
-        // Decompression failed
-        fprintf(stderr, "Decompression failed (error code: %d).\n", result);
-        free(decompressed_content);
-        return false;
-    }
-}
-
 
 bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_messages) {
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
@@ -491,57 +322,36 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     }
 
     char buffer[BUFFER_SIZE];
-    // char buffer[BUFFER_SIZE + 1];
-    int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
-
+    int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE - 1);
 
     if (read_n > 0) {
+        buffer[read_n] = '\0';
         int write_n;
 
-        // buffer[read_n] = '\0';
-
-        // // NOTE: Working version
-        // char *header_end = strstr(buffer, "\r\n\r\n");
-        // if (header_end != NULL) {
-        //     printf("\nFOUND A HEADER\n");
-        // } else {
-        //     printf("\nFOUND A BODY\n");
-        //     decompress_and_print(buffer, read_n);
-        // }
-
-        // fprintf(stderr, "READING SERVER RESPONSE:\n");
-
-        // int total_written = 0;
-        // while (total_written < read_n) {
-        //     int write_n = SSL_write(curr_context->client_ssl, buffer + total_written, read_n - total_written);
-        //     if (write_n <= 0) {
-        //         // printf("Error writing to client\n");
-        //         return false;
-        //     }
-        //     total_written += write_n;
-        // }
-
         // Experimental Version
-        // Needs to differentiate between headers and bodies
         message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
         curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
+        assert(curr_message != NULL);
+
+        //breakpoint here
+
         if (curr_message->msg_complete) {
+            // if curr_message is a header, the inject function will do nothing
             inject_script_into_html(curr_message);
 
             if (curr_message->content_type == CHUNKED_ENCODING) {
                 update_message_header_no_chunk(curr_message);
             }
 
+            // Write header to client
             write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
-            if (write_n <= 0) {
-                return false;
-            }
+            if (write_n <= 0) { return false; }
+
             if (curr_message->content_length > 0) {
                 write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
+                if (write_n <= 0) { return false; }
             }
-            if (write_n <= 0) {
-                return false;
-            }
+
             removeNode(all_messages, curr_message);
         }
 
@@ -549,17 +359,15 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     }  
     
     else {
-        // fprintf(stderr, "ERROR\n");
+        fprintf(stderr, "ERROR\n");
 
         int ssl_error = SSL_get_error(curr_context->server_ssl, read_n);
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
-            // Need to retry the operation later
-            return true; // Keep the connection open
+            // Keep the connection open, Need to retry the operation later
+            return true;
         } else {
-            // Handle other errors
-            // printf("\nClient FD: %d\n", curr_context->server_fd);
-            // printf("SSL_read failed with error code %d\n", ssl_error);
-            return false; // Close the connection
+            // Other error, close the connection
+            return false;
         }
     }
 }
@@ -845,8 +653,6 @@ void insert_buffer_into_message(message *msg, char *buffer, int buffer_length) {
     }
 }
 
-#include <ctype.h>
-
 void modify_accept_encoding(message *curr_message) {
     char *header = curr_message->header;
     size_t header_length = curr_message->header_length;
@@ -933,6 +739,10 @@ void set_max_fd(int new_fd, int *max_fd) {
 
 void inject_script_into_html(message *msg) {
     const char *body_tag = "</body>";
+
+    if (msg->content == NULL) { return; }
+    assert(msg->content != NULL);
+
     char *pos = strstr((const char *)msg->content, body_tag);
 
     if (pos) {
