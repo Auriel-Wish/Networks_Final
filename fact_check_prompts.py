@@ -1,3 +1,10 @@
+possible_to_fact_check_prompt = '''
+You will be given a piece of text. Your job is to determine whether the text
+is a statement that could potentially be fact-checked. If it can be, return "yes".
+If it can't be (i.e if it is gibberish, makes no sense, does not possess any sort of claim),
+return "no". ONLY RETURN "yes" or "no", NO OTHER TEXT.
+'''
+
 make_query_prompt = '''
 You will be given a piece of text that may or may not be true.
 The goal is to find Wikipedia articles related to the topic and verify the information.

@@ -62,14 +62,7 @@ def make_LLM_request(request, url):
         print(f"An error occurred: {e}")
     return None
 
-def get_LLM_fact_check_response(to_fact_check):
-    with open('config.json', 'r') as file:
-        config_proxy_agent = json.load(file)
-
-    port = int(config_proxy_agent['port'])
-    address = config_proxy_agent['address']
-    url = f"http://{address}:{port}/post"
-
+def get_LLM_fact_check_response(to_fact_check, url):
     request = {
         'model': '4o-mini',
         'system': make_query_prompt,
@@ -132,7 +125,16 @@ def LLM_no_wiki_fact_check(to_fact_check, url):
         'system': verify_information_no_wiki_prompt,
         'query': to_fact_check,
     }
-    return "<strong>RESPONSE NOT VERIFIED</strong><br>" + str(make_LLM_request(request, url))
+    return "<strong>RESPONSE NOT VERIFIED BY SOURCE - POSSIBLE HALLUCINATION</strong><br>" + str(make_LLM_request(request, url))
+
+def can_be_fact_checked(to_fact_check, url):
+    request = {
+        'model': '4o-mini',
+        'system': possible_to_fact_check_prompt,
+        'query': to_fact_check,
+    }
+    res = make_LLM_request(request, url)
+    return ('yes' in res.lower())
 
 def main():
     # Define the paths for the Unix domain socket
@@ -150,6 +152,13 @@ def main():
         sock.bind(SOCKET_PATH)
         print(f"Listening on {SOCKET_PATH}...")
 
+        with open('config.json', 'r') as file:
+            config_proxy_agent = json.load(file)
+
+        port = int(config_proxy_agent['port'])
+        address = config_proxy_agent['address']
+        url = f"http://{address}:{port}/post"
+
         # Continuous loop to wait for data
         while True:
             data, addr = sock.recvfrom(10000)
@@ -163,24 +172,31 @@ def main():
                 n = sock.sendto("An error occurred while fact checking.".encode(), addr)
                 continue
             to_fact_check = data['text']
+            json_payload = {
+                "factCheck": "UNKNOWN ERROR"
+            }
 
             extra_text = to_fact_check[:100]
             if len(to_fact_check) > 100:
                 extra_text += "..."
-            LLM_response = get_LLM_fact_check_response(to_fact_check)
-            formatted_response = f"<strong>{extra_text}</strong><br><br>{LLM_response.replace('\\n', '<br>')}"
-            formatted_response = html.unescape(formatted_response)
+            extra_text = f"<strong>{extra_text}</strong><br><br>"
 
-            if formatted_response:
-                json_payload = {
-                    "factCheck": formatted_response
-                }
-                json_output = json.dumps(json_payload, ensure_ascii=False)
-                print(f"Sending to proxy:\n{json_output}")
-                data_to_send = json_output.encode('utf-8')
-                n = sock.sendto(data_to_send, addr)
+            if can_be_fact_checked(to_fact_check, url):
+                LLM_response = get_LLM_fact_check_response(to_fact_check, url)
+                formatted_response = f"{extra_text}{LLM_response.replace('\\n', '<br>')}"
+                formatted_response = html.unescape(formatted_response)
+
+                if formatted_response:
+                    json_payload['factCheck'] = formatted_response
+                else:
+                    json_payload['factCheck'] = f"{extra_text}An error occurred while fact checking."
             else:
-                n = sock.sendto("An error occurred while fact checking.".encode(), addr)
+                json_payload['factCheck'] = f"{extra_text}Statement does not make sense to fact check"
+            
+            json_output = json.dumps(json_payload, ensure_ascii=False)
+            print(f"Sending to proxy:\n{json_output}")
+            data_to_send = json_output.encode('utf-8')
+            n = sock.sendto(data_to_send, addr)
 
     finally:
         sock.close()
