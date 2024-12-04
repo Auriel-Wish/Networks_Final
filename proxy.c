@@ -91,14 +91,14 @@ int main(int argc, char **argv)
     while (true) {
         read_fd_set = active_read_fd_set;
 
-        fprintf(stderr, "SELECT blocking...");
+        // fprintf(stderr, "SELECT blocking...");
 
         if (select(max_fd, &read_fd_set, NULL, NULL, &TIMEOUT) < 0) {
             perror("ERROR with select");
             continue;
         }
 
-        fprintf(stderr, "DONE blocking\n");
+        // fprintf(stderr, "DONE blocking\n");
 
         /* Service all sockets with input pending */
         for (int i = 0; i < max_fd; ++i) {
@@ -138,9 +138,6 @@ int main(int argc, char **argv)
                     FD_SET(new_fd, &active_read_fd_set);
                     set_max_fd(new_fd, &max_fd);
                 }
-
-                // Couldn't this be an issue if there were multiple servers 
-                // that we were connected to at the same time?
 
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
                     // printf("\nReading from server: %d\n", i);

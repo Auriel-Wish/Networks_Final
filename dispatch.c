@@ -187,6 +187,11 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
     if (strncmp(buffer, "CONNECT", 7) == 0) {
         // If it is a CONNECT request, setup a new SSL context for the client
         char *hostname = strtok(buffer + 8, ":");
+
+        // I don't think we need this stuff
+        // char *hostname = strtok(buffer + 8, ":");
+        // char *port_str = strtok(NULL, " ");
+        // int port = port_str ? atoi(port_str) : 443; // Default to port 443 if not specified
         
         SSL_CTX *ctx;
         ctx = create_ssl_context();
@@ -245,14 +250,14 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     (void)cache;
     
     if (curr_context == NULL) {
-        /* No SSL Context associated with this file descriptor */
+        /* No SSL Context associated with this file descriptor 
+         * read HTTP CONNECT (should be a connect)
+         * setup SSL connection, adds to FD -> SSL mapping */
 
-        // read HTTP CONNECT (should be a connect)
-        // setup SSL connection, adds to FD -> SSL mapping
         return handle_connect_request(client_fd, ssl_contexts, active_read_fd_set, max_fd);
     }
 
-    // // check the cache to see if the content is present:
+    // check the cache to see if the content is present:
     // Cache_Response_T *resp = get_response_from_cache(cache, curr_context->hostname);
     
     else {
@@ -263,6 +268,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         n = SSL_read(curr_context->client_ssl, buffer, BUFFER_SIZE);
         
         if (n > 0) {
+            buffer[n] = '\0';
             message *curr_message = get_message_by_filedes(*all_messages, curr_context->client_fd);
             curr_message = insert_new_data(&curr_message, buffer, curr_context->client_fd, all_messages, n);
 
@@ -272,11 +278,20 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
             if (curr_message->msg_complete) {
                 // Check if "fact-check" appears in the first line of the header
                 char *fact_check = strstr(curr_message->header, "fact-check");
+
+                //print the header
+                printf("Printing the header\n");
+                print_buffer_s(curr_message->header, curr_message->header_length);
+
                 if (fact_check == NULL) {
+
+                    // If fact-check is not in the header, send to server
                     n = SSL_write(curr_context->server_ssl, curr_message->header, curr_message->header_length);
                     if (n <= 0) {
                         return false;
                     }
+
+                    // If there is content to be written, write the content to the server
                     if (curr_message->content_length > 0) {
                         n = SSL_write(curr_context->server_ssl, curr_message->content, curr_message->content_length);
                         if (n <= 0) {
@@ -284,10 +299,11 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                         }
                         printf("Wrote to server: %s\n", curr_message->content);
                     }
+
                 }
 
                 else {
-                    // Send to LLM
+                    // If fact-check IS in the header, Send to LLM
                     char *example = "HTTP/1.1 200 OK\r\n"
                                     "Content-Type: application/json\r\n"
                                     "Content-Length: 35\r\n"
@@ -298,17 +314,27 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                     printf("Wrote to client: %s\n", example);
                 }
                 
+
                 removeNode(all_messages, curr_message);
             }
 
             return true;
-        } else {
+        } 
+        
+        else {
+            fprintf(stderr, "ERROR reading from client...");
+
             int ssl_error = SSL_get_error(curr_context->client_ssl, n);
+
+
             if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                 // Keep the connection open, need to retry the operation later
+                fprintf(stderr, "Keeping connection open\n");
                 return true; 
             } else {
                 // Other error, close the connection
+                fprintf(stderr, "Closing connection\n");
+
                 return false;
             }
         }
@@ -321,47 +347,96 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         return false;
     }
 
-    char buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE + 1];
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE - 1);
 
     if (read_n > 0) {
         buffer[read_n] = '\0';
         int write_n;
 
-        // Experimental Version
-        message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
-        curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
+        // Ok, so when we just send it through, it works.
+        // The difficulty comes with breaking down the headers and the message
+        // to try to format it the way we wnat
+        write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
+        if (write_n <= 0) { return false; }
+
+        print_buffer_s(buffer, read_n);
+
+        message *curr_message = malloc(sizeof(message));
         assert(curr_message != NULL);
 
-        //breakpoint here
+        curr_message->filedes = 0;
+        curr_message->header_length = -1;
+        curr_message->content_length = -1;
+        curr_message->bytes_of_content_read = 0;
+        curr_message->header = NULL;
+        curr_message->content = NULL;
+        curr_message->header_complete = false;
+        curr_message->msg_complete = false;
+        curr_message->content_type = -1;
 
-        if (curr_message->msg_complete) {
-            // Only inject script into content if message is not a header
-            if (curr_message->content != NULL) {
-                inject_script_into_html(curr_message);
-            }
+        curr_message->chunk_state = CHUNK_SIZE;
+        curr_message->chunk_size = 0;
+        curr_message->bytes_read_in_chunk = 0;
+        memset(curr_message->chunk_size_str, 0, sizeof(curr_message->chunk_size_str));
+        curr_message->chunk_size_str_index = 0; 
+        append(all_messages, curr_message);
 
-            if (curr_message->content_type == CHUNKED_ENCODING) {
-                update_message_header_no_chunk(curr_message);
-            }
 
-            // Write header to client
-            write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
-            if (write_n <= 0) { return false; }
 
-            if (curr_message->content_length > 0) {
-                write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
-                if (write_n <= 0) { return false; }
-            }
+        // message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
+        // curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
+        // assert(curr_message != NULL);
 
-            removeNode(all_messages, curr_message);
-        }
+        // // breakpoint here
+
+        // if (curr_message->msg_complete) {
+            
+        //     // Inject script if content is not a header
+
+        //     // if (curr_message->content != NULL) {
+        //     //     inject_script_into_html(curr_message);
+        //     // }
+
+        //     // printf("HEADER BEFORE:\n");
+        //     // print_buffer_s(curr_message->header, curr_message->header_length);
+
+        //     // // If message uses chunked encoding, update it so that it doesn't
+        //     // if (curr_message->content_type == CHUNKED_ENCODING) {
+        //     //     update_message_header_no_chunk(curr_message);
+        //     // }
+
+        //     //print header
+        //     printf("HEADER AFTER:\n");
+        //     print_buffer_s(curr_message->header, curr_message->header_length);
+
+        //     // Write header to client
+        //     write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
+        //     if (write_n <= 0) { return false; }
+
+        //     // If content length is greater than 0, write content to client.
+        //     if (curr_message->content_length > 0) {
+        //         printf("content:\n");
+        //         print_buffer(curr_message->content, curr_message->content_length);
+
+        //         write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
+        //         if (write_n <= 0) { return false; }
+        //     }
+
+
+        //     else if (read_n > curr_message->header_length) {
+        //         printf("I still have no clue what is going on here\n");
+        //         write_n = SSL_write(curr_context->client_ssl, buffer + curr_message->header_length, read_n - curr_message->header_length);
+        //     }
+
+        //     removeNode(all_messages, curr_message);
+        // }
 
         return true;
     }  
     
     else {
-        fprintf(stderr, "ERROR\n");
+        fprintf(stderr, "ERROR reading from server\n");
 
         int ssl_error = SSL_get_error(curr_context->server_ssl, read_n);
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
@@ -375,27 +450,44 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 }
 
 void update_message_header_no_chunk(message *msg) {
+    fprintf(stderr, "entering this function in the first place\n");
     if (msg == NULL || msg->header == NULL) {
         fprintf(stderr, "Error: message or header is NULL.\n");
         return;
     }
 
-    const char *chunked_encoding = "Transfer-Encoding: chunked\r\n";
-    char content_length_header[64];
+    bool found = false;
+
+    const char *chunked_encoding_upper = "Transfer-Encoding: chunked";
 
     // Check if "Transfer-Encoding: chunked" exists in the header
-    char *chunked_position = strstr(msg->header, chunked_encoding);
-    if (chunked_position == NULL) {
-        fprintf(stderr, "Error: 'Transfer-Encoding: chunked' not found in header.\n");
-        return;
+    char *chunked_position = strstr(msg->header, chunked_encoding_upper);
+    if (chunked_position != NULL) {
+        found = true;
     }
+
+    if (!found) {
+        const char *chunked_encoding_lower = "transfer-encoding: chunked";
+        chunked_position = strstr(msg->header, chunked_encoding_lower);
+        if (chunked_position == NULL) {
+            fprintf(stderr, "Error: 'Transfer-Encoding: chunked' not found in header.\n");
+            return;
+        }
+    }
+
+    printf("Making it down here\n");
+
+    
+
+    char content_length_header[64];
+
 
     // Create the new "Content-Length" header string
     snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %d\r\n", msg->content_length);
 
     // Calculate new header size
     size_t header_prefix_length = chunked_position - msg->header; // Length of header before "Transfer-Encoding: chunked"
-    size_t header_suffix_length = strlen(chunked_position + strlen(chunked_encoding)); // Length of header after "Transfer-Encoding: chunked"
+    size_t header_suffix_length = strlen(chunked_position + strlen(chunked_encoding_upper)); // Length of header after "Transfer-Encoding: chunked"
     size_t new_header_length = header_prefix_length + strlen(content_length_header) + header_suffix_length;
 
     // Allocate memory for the new header
@@ -409,7 +501,7 @@ void update_message_header_no_chunk(message *msg) {
     strncpy(new_header, msg->header, header_prefix_length); // Copy part before "Transfer-Encoding: chunked"
     new_header[header_prefix_length] = '\0'; // Null-terminate temporarily
     strcat(new_header, content_length_header); // Append "Content-Length: ..."
-    strcat(new_header, chunked_position + strlen(chunked_encoding)); // Append part after "Transfer-Encoding: chunked"
+    strcat(new_header, chunked_position + strlen(chunked_encoding_upper)); // Append part after "Transfer-Encoding: chunked"
 
     // Free the old header and assign the new header to msg
     free(msg->header);
@@ -479,9 +571,11 @@ message *insert_new_data(message **msg, char *buffer, int filedes, Node **all_me
                 }
             }
         }
+
         if (curr_message->content_length == -1 && curr_message->content_type != CHUNKED_ENCODING) {
             curr_message->content_length = 0;
             curr_message->msg_complete = true;
+            return curr_message;
         }
 
         if (curr_message->content_length > 0 && n > 0 && curr_message->content_type == NORMAL_ENCODING) {
@@ -867,6 +961,26 @@ void print_buffer(unsigned char *m, unsigned size)
     }
 }
 
+void print_buffer_s(char *m, unsigned size)
+{
+    // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
+    //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
+    // printf("\nSize of buffer: %d\n", size);
+    if (size > 0) {
+        printf("Message content is: ");
+        for (unsigned offset = 0; offset < size; offset++) {
+            if (m[offset] == '\0') {
+                putchar('.');
+            }
+
+            else {
+                putchar(m[offset]);
+            }
+        }
+
+        printf("\n");
+    }
+}
 // int get_header_length(char *buff) {
 //     char *header_end = strstr(buff, "\r\n\r\n");
 //     if (header_end == NULL) {
