@@ -82,6 +82,7 @@ def get_LLM_fact_check_response(to_fact_check):
     while not successful_wiki_query:
         print("Generating Wikipedia query...")
         wiki_query = make_LLM_request(request, url)
+        print(f"Wiki query: {wiki_query}")
         if not wiki_query:
             print("Wikipedia query generation unsuccessful.")
             break
@@ -137,7 +138,7 @@ def fix_response_format(response):
     response = response.replace('\n', "<br>")
     response = response.replace('\\n', "<br>")
     # response = response.replace('\\', '')
-    print(response)
+    # print(response)
     try:
         # Attempt to convert the response to a valid JSON string
         json_compatible_string = json.dumps(response)
@@ -169,9 +170,12 @@ def main():
             if not data:
                 print("No data received. Exiting...")
                 break
-
-            data = data.decode()
-            data = json.loads(data)
+            try:
+                data = data.decode()
+                data = json.loads(data)
+            except:
+                n = sock.sendto("An error occurred while fact checking.".encode(), addr)
+                continue
             to_fact_check = data['text']
             # print(f"Received: {to_fact_check}")
 

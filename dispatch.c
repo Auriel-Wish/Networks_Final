@@ -273,13 +273,24 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         if (read_n > 0) {
             incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->client_fd);
             curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
+
                 
-            char *fact_check = strstr(curr_message->header, "fact-check");
+            char *fact_check = strstr(curr_message->header, "fact-check-CS112-Final");
             if (fact_check != NULL) {
-                printf("Sending to Python script\n");
-                int header_length = strlen(curr_message->header);
-                char *content_without_header = buffer + header_length;
-                if (sendto(LLM_sockfd, content_without_header, header_length, 0, (struct sockaddr *)&python_addr, sizeof(python_addr)) == -1) {
+                char *content_without_header = buffer + curr_message->original_header_length;
+                char *end_of_message = strstr(content_without_header, "\"}");
+                if (end_of_message != NULL) {
+                    end_of_message[2] = '\0';
+                }
+
+                if (content_without_header[0] != '{' || content_without_header[strlen(content_without_header) - 1] != '}') {
+                    printf("Content is not a JSON object\n");
+                    return true;
+                }
+
+                printf("Content to Fact Check: %s\n", content_without_header);
+
+                if (sendto(LLM_sockfd, content_without_header, strlen(content_without_header), 0, (struct sockaddr *)&python_addr, sizeof(python_addr)) == -1) {
                     printf("\nFAILED TO SEND TO PYTHON SCRIPT\n");
                     close(LLM_sockfd);
                     return false;
@@ -307,7 +318,9 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                 int content_length = static_part_length + num_bytes_from_LLM;
                 snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, content_length, LLM_buffer);
 
+                printf("Fact Check Response:\n%s\n", fact_check_response_buffer);
                 write_n = SSL_write(curr_context->client_ssl, fact_check_response_buffer, strlen(fact_check_response_buffer));
+                printf("Wrote fact check response to client\n");
                 if (write_n <= 0) {
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
@@ -946,33 +959,138 @@ char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
     }
     printf("Injecting script into chunked HTML\n");
 
-    const char *script_to_inject =
-        "<script>"
-        "document.addEventListener('DOMContentLoaded', () => {"
-        "  const factCheckButton = document.createElement('button');"
-        "  factCheckButton.innerText = 'Fact Check Selected';"
-        "  factCheckButton.style.position = 'fixed';"
-        "  factCheckButton.style.bottom = '10px';"
-        "  factCheckButton.style.right = '10px';"
-        "  factCheckButton.style.zIndex = '9999';"
-        "  factCheckButton.style.padding = '15px';"
-        "  factCheckButton.style.backgroundColor = 'white';"
-        "  factCheckButton.style.borderRadius = '5px';"
-        "  factCheckButton.style.cursor = 'pointer';"
-        "  factCheckButton.style.color = 'black';"
-        "  factCheckButton.style.border = 'none';"
-        "  factCheckButton.style.fontSize = 'large';"
-        "  factCheckButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
-        "  factCheckButton.style.transition = 'background-color 0.3s';"
-        "  factCheckButton.addEventListener('mouseover', () => {"
-        "     factCheckButton.style.backgroundColor = 'gainsboro';"
-        "  });"
-        "  factCheckButton.addEventListener('mouseout', () => {"
-        "     factCheckButton.style.backgroundColor = 'white';"
-        "  });"
-        "  document.body.appendChild(factCheckButton);"
-        "});"
-        "</script>";
+const char *script_to_inject = 
+            "<script>"
+            "document.addEventListener('DOMContentLoaded', () => {"
+            "  const factCheckButton = document.createElement('button');"
+            "  factCheckButton.innerText = 'Fact Check Selected';"
+            "  factCheckButton.style.position = 'fixed';"
+            "  factCheckButton.style.bottom = '10px';"
+            "  factCheckButton.style.right = '10px';"
+            "  factCheckButton.style.zIndex = '9999';"
+            "  factCheckButton.style.padding = '15px';"
+            "  factCheckButton.style.backgroundColor = 'white';"
+            "  factCheckButton.style.borderRadius = '5px';"
+            "  factCheckButton.style.cursor = 'pointer';"
+            "  factCheckButton.style.color = 'black';"
+            "  factCheckButton.style.border = 'none';"
+            "  factCheckButton.style.fontSize = 'large';"
+            "  factCheckButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
+            "  factCheckButton.style.transition = 'background-color 0.3s';"
+            "  factCheckButton.addEventListener('mouseover', () => {"
+            "     factCheckButton.style.backgroundColor = 'gainsboro';"
+            "  });"
+            "  factCheckButton.addEventListener('mouseout', () => {"
+            "     factCheckButton.style.backgroundColor = 'white';"
+            "  });"
+            "  document.body.appendChild(factCheckButton);"
+            ""
+            "  factCheckButton.addEventListener('click', async () => {"
+            "    const selection = window.getSelection().toString();"
+            "    if (selection) {"
+            "      const popupDiv = document.createElement('div');"
+            "      popupDiv.style.position = 'fixed';"
+            "      popupDiv.style.top = '50%';"
+            "      popupDiv.style.left = '50%';"
+            "      popupDiv.style.transform = 'translate(-50%, -50%)';"
+            "      popupDiv.style.padding = '20px';"
+            "      popupDiv.style.width = '60%';"
+            "      popupDiv.style.backgroundColor = 'white';"
+            "      popupDiv.style.color = 'black';"
+            "      popupDiv.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
+            "      popupDiv.style.zIndex = '10000';"
+            "      popupDiv.style.borderRadius = '8px';"
+            "      popupDiv.innerHTML = "
+            "        `<div style='display: flex; justify-content: space-between; align-items: center;'>"
+            "          <button style='background: none; border: none; font-size: 18px; cursor: pointer; color: black'>&times;</button>"
+            "        </div>"
+            "        <p style='font-size: large'><strong>Fact checking...</strong></p>`;"
+            ""
+            "      const closeButton = popupDiv.querySelector('button');"
+            "      closeButton.addEventListener('click', () => {"
+            "        document.body.removeChild(popupDiv);"
+            "      });"
+            ""
+            "      document.body.appendChild(popupDiv);"
+            ""
+            "      try {"
+            "        const response = await fetch('https://www.quora.com/ajax/receive_POST?fact-check-CS112-Final=True', {"
+            "          method: 'POST',"
+            "          headers: { 'Content-Type': 'application/json' },"
+            "          body: JSON.stringify({ text: selection })"
+            "        });"
+            "        const result = await response.json();"
+            "        popupDiv.querySelector('p').innerHTML = result.factCheck;"
+            "      } catch (error) {"
+            "        popupDiv.querySelector('p').innerHTML = 'An error occurred. Please try again.';"
+            "      }"
+            "    }"
+            "  });"
+            "});"
+            "</script>";
+
+// const char *script_to_inject =
+//     "<script>"
+//     "document.addEventListener('DOMContentLoaded', () => {"
+//     "  console.log('Fact-check script loaded');"
+//     "  const injectButton = () => {"
+//     "    if (document.querySelector('#factCheckButton')) return;" // Avoid duplicate buttons
+//     "    const factCheckButton = document.createElement('button');"
+//     "    factCheckButton.id = 'factCheckButton';"
+//     "    factCheckButton.innerText = 'Fact Check Selected';"
+//     "    factCheckButton.style.position = 'fixed';"
+//     "    factCheckButton.style.bottom = '10px';"
+//     "    factCheckButton.style.right = '10px';"
+//     "    factCheckButton.style.zIndex = '9999';"
+//     "    factCheckButton.style.padding = '15px';"
+//     "    factCheckButton.style.backgroundColor = 'white';"
+//     "    factCheckButton.style.borderRadius = '5px';"
+//     "    factCheckButton.style.cursor = 'pointer';"
+//     "    factCheckButton.style.color = 'black';"
+//     "    factCheckButton.style.border = 'none';"
+//     "    factCheckButton.style.fontSize = 'large';"
+//     "    factCheckButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
+//     "    factCheckButton.style.transition = 'background-color 0.3s';"
+//     "    factCheckButton.addEventListener('mouseover', () => {"
+//     "       factCheckButton.style.backgroundColor = 'gainsboro';"
+//     "    });"
+//     "    factCheckButton.addEventListener('mouseout', () => {"
+//     "       factCheckButton.style.backgroundColor = 'white';"
+//     "    });"
+//     "    factCheckButton.addEventListener('click', () => {"
+//     "       const selectedText = window.getSelection().toString();"
+//     "       if (!selectedText) {"
+//     "         alert('Please select some text to fact check!');"
+//     "         return;"
+//     "       }"
+//     "       console.log('Selected text:', selectedText);"
+//     "       fetch('https://www.quora.com/ajax/receive_POST?fact-check-CS112-Final=True', {"
+//     "         method: 'POST',"
+//     "         headers: {"
+//     "           'Content-Type': 'application/json'"
+//     "         },"
+//     "         body: JSON.stringify({ text: selectedText })"
+//     "       })"
+//     "       .then(response => response.json())"
+//     "       .then(data => {"
+//     "         alert(`Fact Check Result: ${data.result}`);"
+//     "       })"
+//     "       .catch(error => {"
+//     "         console.error('Error with fact check:', error);"
+//     "         alert('An error occurred during the fact check.');"
+//     "       });"
+//     "    });"
+//     "    document.body.appendChild(factCheckButton);"
+//     "  };"
+//     "  injectButton();"
+//     "  const observer = new MutationObserver(() => injectButton());"
+//     "  observer.observe(document.body, { childList: true, subtree: true });"
+//     "});"
+//     "</script>";
+
+
+
+    // script_to_inject = "<script>alert('Script injected');</script>";
 
     size_t buffer_len = *buffer_length;
     char *ptr = buffer;
