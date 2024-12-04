@@ -23,29 +23,44 @@ typedef struct {
     char *hostname;
 } Context_T;
 
+// typedef struct {
+//     int filedes;
+
+//     // char msg_type;
+//     int header_length;
+//     int content_length;
+//     int bytes_of_content_read;
+
+//     char *header;
+//     unsigned char *content;
+
+//     bool header_complete;
+//     bool msg_complete;
+
+//     int content_type;
+
+//     // Chunked encoding processing state
+//     int chunk_state;
+//     int chunk_size;
+//     int bytes_read_in_chunk;
+//     char chunk_size_str[16];
+//     int chunk_size_str_index;
+// } message;
+
 typedef struct {
     int filedes;
-
-    // char msg_type;
-    int header_length;
     int content_length;
-    int bytes_of_content_read;
-
-    char *header;
-    unsigned char *content;
-
+    int content_length_read;
     bool header_complete;
-    bool msg_complete;
-
-    int content_type;
-
-    // Chunked encoding processing state
-    int chunk_state;
-    int chunk_size;
-    int bytes_read_in_chunk;
-    char chunk_size_str[16];
-    int chunk_size_str_index;
-} message;
+    enum {
+        NORMAL_ENCODING,
+        CHUNKED_ENCODING,
+        OTHER_ENCODING
+    } original_content_type;
+    char *header;
+    int original_header_length;
+    bool header_sent;
+} incomplete_message;
 
 void append(Node **head, void *data);
 void removeNode(Node **head, void *data);
@@ -53,4 +68,6 @@ void freeList(Node *head);
 
 Context_T *get_ssl_context_by_client_fd(Node *head, int client_fd);
 Context_T *get_ssl_context_by_server_fd(Node *head, int server_fd);
-message *get_message_by_filedes(Node *head, int filedes);
+// message *get_message_by_filedes(Node *head, int filedes);
+incomplete_message *get_incomplete_message_by_filedes(Node *head, int filedes);
+void modify_content_type(incomplete_message *msg);

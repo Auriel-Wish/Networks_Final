@@ -180,25 +180,16 @@ int main(int argc, char **argv)
                 // that we were connected to at the same time?
 
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
-                    // printf("\nReading from server: %d\n", i);
                     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 } 
                 
                 else {
-                    // printf("\nReading from client %d\n", i);
                     if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, NULL, &all_messages, LLM_sockfd, python_addr)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 }
-
-                // else {
-                    //if (client_or_server_fd(ssl_contexts, i) == CLIENT_FD)
-                //     // fprintf(stderr, "No fd association\n");
-                //     // assert(false);
-                // }
-
             }
         }
     }
@@ -207,8 +198,6 @@ int main(int argc, char **argv)
 }
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
-    // fprintf(stderr, "DISCONNECTING THE CLIENT: %d...", filedes);
-
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
     
@@ -217,7 +206,6 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     }
 
     if (curr_context == NULL) {
-        // printf("No context found for file descriptor %d\n", filedes);
         return;
     }
 
@@ -226,11 +214,6 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
         char filename[256];
         snprintf(filename, sizeof(filename), "%s.crt", hostname);
         remove(filename);
-        // if (remove(filename) == 0) {
-        //     printf("Deleted certificate file: %s\n", filename);
-        // } else {
-        //     printf("Error deleting certificate file");
-        // }
     }
 
     FD_CLR(curr_context->client_fd, active_read_fd_set);
@@ -244,6 +227,4 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     close(curr_context->server_fd);
 
     removeNode(ssl_contexts, curr_context);
-
-    // fprintf(stderr, " COMPLETE\n");
 }
