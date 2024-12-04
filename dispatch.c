@@ -308,17 +308,18 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                 }
 
                 char *fact_check_response = "HTTP/1.1 200 OK\r\n"
-                                            "Content-Type: application/json\r\n"
+                                            "Content-Type: application/json; charset=utf-8\r\n"
                                             "Content-Length: %d\r\n"
                                             "\r\n"
-                                            "{\"factCheck\": %s}";
+                                            "%s";
 
                 char fact_check_response_buffer[20000];
-                int static_part_length = strlen("{\"factCheck\": }"); // Length of the fixed JSON structure
-                int content_length = static_part_length + num_bytes_from_LLM;
-                snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, content_length, LLM_buffer);
+                // int static_part_length = strlen("{\"factCheck\": }"); // Length of the fixed JSON structure
+                // int content_length = static_part_length + num_bytes_from_LLM;
+                // snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, content_length, LLM_buffer);
+                snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, num_bytes_from_LLM, LLM_buffer);
 
-                printf("Fact Check Response:\n%s\n", fact_check_response_buffer);
+                // printf("Fact Check Response:\n%s\n", fact_check_response_buffer);
                 write_n = SSL_write(curr_context->client_ssl, fact_check_response_buffer, strlen(fact_check_response_buffer));
                 printf("Wrote fact check response to client\n");
                 if (write_n <= 0) {
@@ -1028,69 +1029,6 @@ const char *script_to_inject =
             "  });"
             "});"
             "</script>";
-
-// const char *script_to_inject =
-//     "<script>"
-//     "document.addEventListener('DOMContentLoaded', () => {"
-//     "  console.log('Fact-check script loaded');"
-//     "  const injectButton = () => {"
-//     "    if (document.querySelector('#factCheckButton')) return;" // Avoid duplicate buttons
-//     "    const factCheckButton = document.createElement('button');"
-//     "    factCheckButton.id = 'factCheckButton';"
-//     "    factCheckButton.innerText = 'Fact Check Selected';"
-//     "    factCheckButton.style.position = 'fixed';"
-//     "    factCheckButton.style.bottom = '10px';"
-//     "    factCheckButton.style.right = '10px';"
-//     "    factCheckButton.style.zIndex = '9999';"
-//     "    factCheckButton.style.padding = '15px';"
-//     "    factCheckButton.style.backgroundColor = 'white';"
-//     "    factCheckButton.style.borderRadius = '5px';"
-//     "    factCheckButton.style.cursor = 'pointer';"
-//     "    factCheckButton.style.color = 'black';"
-//     "    factCheckButton.style.border = 'none';"
-//     "    factCheckButton.style.fontSize = 'large';"
-//     "    factCheckButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
-//     "    factCheckButton.style.transition = 'background-color 0.3s';"
-//     "    factCheckButton.addEventListener('mouseover', () => {"
-//     "       factCheckButton.style.backgroundColor = 'gainsboro';"
-//     "    });"
-//     "    factCheckButton.addEventListener('mouseout', () => {"
-//     "       factCheckButton.style.backgroundColor = 'white';"
-//     "    });"
-//     "    factCheckButton.addEventListener('click', () => {"
-//     "       const selectedText = window.getSelection().toString();"
-//     "       if (!selectedText) {"
-//     "         alert('Please select some text to fact check!');"
-//     "         return;"
-//     "       }"
-//     "       console.log('Selected text:', selectedText);"
-//     "       fetch('https://www.quora.com/ajax/receive_POST?fact-check-CS112-Final=True', {"
-//     "         method: 'POST',"
-//     "         headers: {"
-//     "           'Content-Type': 'application/json'"
-//     "         },"
-//     "         body: JSON.stringify({ text: selectedText })"
-//     "       })"
-//     "       .then(response => response.json())"
-//     "       .then(data => {"
-//     "         alert(`Fact Check Result: ${data.result}`);"
-//     "       })"
-//     "       .catch(error => {"
-//     "         console.error('Error with fact check:', error);"
-//     "         alert('An error occurred during the fact check.');"
-//     "       });"
-//     "    });"
-//     "    document.body.appendChild(factCheckButton);"
-//     "  };"
-//     "  injectButton();"
-//     "  const observer = new MutationObserver(() => injectButton());"
-//     "  observer.observe(document.body, { childList: true, subtree: true });"
-//     "});"
-//     "</script>";
-
-
-
-    // script_to_inject = "<script>alert('Script injected');</script>";
 
     size_t buffer_len = *buffer_length;
     char *ptr = buffer;

@@ -4,11 +4,12 @@ import json
 import requests
 import socket
 import os
+import html
 from fact_check_prompts import *
 
 MAX_ARTICLE_LENGTH = 10000
 
-def search_wikipedia(query, max_results=5, delay=2):
+def search_wikipedia(query, max_results):
     """
     Searches for Wikipedia articles based on a query and retrieves their content.
     
@@ -35,7 +36,7 @@ def search_wikipedia(query, max_results=5, delay=2):
                 # Get the full article text
                 content = wikipedia.page(title, auto_suggest=False).content
                 articles_content[title] = content
-                time.sleep(delay)  # Add delay between requests
+                time.sleep(0.5)  # Add delay between requests
             except wikipedia.DisambiguationError as e:
                 print(f"Disambiguation error for '{title}': {e.options}")
             except wikipedia.PageError:
@@ -52,6 +53,8 @@ def make_LLM_request(request, url):
         response = requests.post(url, json=request)
 
         if response.status_code == 200:
+            print("RESPONSE:")
+            print(response.text)
             return response.text
         else:
             print(f"Error: Received response code {response.status_code}")
@@ -67,9 +70,6 @@ def get_LLM_fact_check_response(to_fact_check):
     address = config_proxy_agent['address']
     url = f"http://{address}:{port}/post"
 
-    # to_fact_check = "The capital of America is New York City."
-    # to_fact_check = "Steve Harvey is the richest man in the world."
-
     request = {
         'model': '4o-mini',
         'system': make_query_prompt,
@@ -78,6 +78,7 @@ def get_LLM_fact_check_response(to_fact_check):
     }
 
     successful_wiki_query = False
+    unsuccessful_wiki_queries = []
 
     while not successful_wiki_query:
         print("Generating Wikipedia query...")
@@ -100,7 +101,8 @@ def get_LLM_fact_check_response(to_fact_check):
                     total_fact_check_content += "\n\n\n"
             else:
                 print("No articles were retrieved. Trying a different query...")
-                request['query'] = f"{to_fact_check}\n\nThe previously generated query was unsuccessful. Please try again from a different perspective. Previous query: {wiki_query}"
+                unsuccessful_wiki_queries.append(wiki_query)
+                request['query'] = f"{to_fact_check}\n\n{remake_query_prompt}{str(unsuccessful_wiki_queries)}"
                 request['temperature'] += 0.3
                 if request['temperature'] > 2.0:
                     print("Failed to generate a successful Wikipedia query.")
@@ -122,31 +124,15 @@ def get_LLM_fact_check_response(to_fact_check):
                 if fact_check_response:
                     return fact_check_response
                 
-    return "Failed to fact check the statement."
+    return LLM_no_wiki_fact_check(to_fact_check, url)
 
-def fix_response_format(response):
-    """
-    Ensures the input string is a valid JSON value for an HTTP response.
-
-    Args:
-        response (str): The input string to be fixed.
-
-    Returns:
-        str: A JSON-compliant string that can be used in an HTTP response.
-    """
-    response = response.replace('"', "")
-    response = response.replace('\n', "<br>")
-    response = response.replace('\\n', "<br>")
-    # response = response.replace('\\', '')
-    # print(response)
-    try:
-        # Attempt to convert the response to a valid JSON string
-        json_compatible_string = json.dumps(response)
-    except (TypeError, ValueError):
-        # If the input is not valid JSON, sanitize it
-        json_compatible_string = json.dumps("NOT JSON COMPATIBLE")
-
-    return json_compatible_string
+def LLM_no_wiki_fact_check(to_fact_check, url):
+    request = {
+        'model': '4o-mini',
+        'system': verify_information_no_wiki_prompt,
+        'query': to_fact_check,
+    }
+    return "<strong>RESPONSE NOT VERIFIED</strong><br>" + str(make_LLM_request(request, url))
 
 def main():
     # Define the paths for the Unix domain socket
@@ -177,24 +163,24 @@ def main():
                 n = sock.sendto("An error occurred while fact checking.".encode(), addr)
                 continue
             to_fact_check = data['text']
-            # print(f"Received: {to_fact_check}")
 
-            # Respond to the C script
-            fact_checker_response = "<strong>"
-            fact_checker_response += to_fact_check[:100]
+            extra_text = to_fact_check[:100]
             if len(to_fact_check) > 100:
-                fact_checker_response += "..."
-            fact_checker_response += "</strong>"
-            fact_checker_response += "\n\n"
-            fact_checker_response += get_LLM_fact_check_response(to_fact_check)
-            fact_checker_response = fix_response_format(fact_checker_response)
-            # print(fact_checker_response)
-            if fact_checker_response:
-                n = sock.sendto(fact_checker_response.encode(), addr)
-                # print(f"Sent {n} bytes back to {addr}")
+                extra_text += "..."
+            LLM_response = get_LLM_fact_check_response(to_fact_check)
+            formatted_response = f"<strong>{extra_text}</strong><br><br>{LLM_response.replace('\\n', '<br>')}"
+            formatted_response = html.unescape(formatted_response)
+
+            if formatted_response:
+                json_payload = {
+                    "factCheck": formatted_response
+                }
+                json_output = json.dumps(json_payload, ensure_ascii=False)
+                print(f"Sending to proxy:\n{json_output}")
+                data_to_send = json_output.encode('utf-8')
+                n = sock.sendto(data_to_send, addr)
             else:
                 n = sock.sendto("An error occurred while fact checking.".encode(), addr)
-                # print(f"Sent {n} bytes back to {addr}")
 
     finally:
         sock.close()
