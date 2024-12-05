@@ -15,10 +15,8 @@
 #include <ctype.h>
 #include <zlib.h>
 
-
-#define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
+#define DECOMPRESSED_BUFFER_SIZE 8192
 #define CHUNK 16384
-
 
 SSL_CTX *create_ssl_context() {
     const SSL_METHOD *method = TLS_server_method(); // Use the TLS server method
@@ -214,7 +212,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(client_ssl) <= 0) {
-            printf("\nSSL handshake failed to client\n");
+            printf("\nSSL handshake with client FAILED\n");
             ERR_print_errors_fp(stderr);
             SSL_shutdown(client_ssl);
             SSL_free(client_ssl);
@@ -237,11 +235,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
     } 
     
     else {
-        // printf("Not a CONNECT request\n");
-        
-        for (int i = 0; i < nbytes; i++) {
-            putchar(buffer[i]);
-        }
+        // NOT a CONNECT request
         return false;
     }
 }
@@ -274,9 +268,10 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
             incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->client_fd);
             curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
 
-                
+            // Seeing whether the message needs to be fact-checked
             char *fact_check = strstr(curr_message->header, "fact-check-CS112-Final");
             if (fact_check != NULL) {
+                // The client has asked for data to be fact-checked
                 char *content_without_header = buffer + curr_message->original_header_length;
                 char *end_of_message = strstr(content_without_header, "\"}");
                 if (end_of_message != NULL) {
@@ -328,7 +323,9 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                     return false;
                 }
             }
+
             else {
+                // Regular request coming from client
                 curr_message->content_length_read += read_n;
                 if (!(curr_message->header_sent) && curr_message->header_complete) {
                     int header_length = strlen(curr_message->header);
@@ -485,6 +482,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         }
 
         if (read_n > 0) {
+
             if (curr_message->original_content_type != NORMAL_ENCODING) {
                 // printf("original_content_type: %d\n", curr_message->original_content_type);
                 
@@ -515,6 +513,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     removeNode(all_messages, curr_message);
                 }
             }
+
             else {
                 int chunk_data_length = 0;
                 char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
@@ -952,12 +951,45 @@ void set_max_fd(int new_fd, int *max_fd) {
 }
 
 char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
-    char *quora_last_line = "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})})},100)})";
+    // char *quora_last_line = "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})})},100)})";
     const char *body_tag = "</body>";
 
-    if (strstr(buffer, quora_last_line) == NULL || strstr(buffer, body_tag) == NULL) {
+    // if (strstr(buffer, quora_last_line) == NULL || strstr(buffer, body_tag) == NULL) {
+    //     return buffer;
+    // }
+
+    // printf("Attempting to inject script into chunked HTML\n");
+
+    // List of common page-specific indicators or end-of-body markers
+    const char *page_indicators[] = {
+        // Quora-specific script
+        "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})},100)}))",
+        // Generic end-of-body indicators
+        "</body>",
+        "<!-- End of body -->",
+        "<!-- Page content end -->",
+        "</html>"
+    };
+    
+    // Number of indicators to check
+    int num_indicators = sizeof(page_indicators) / sizeof(page_indicators[0]);
+    
+    // Flag to check if any indicator is found
+    int indicator_found = 0;
+    
+    // Check for any of the indicators
+    for (int i = 0; i < num_indicators; i++) {
+        if (strstr(buffer, page_indicators[i]) != NULL) {
+            indicator_found = 1;
+            break;
+        }
+    }
+    
+    // If no indicator found, return the original buffer
+    if (!indicator_found) {
         return buffer;
     }
+    
     printf("Attempting to inject script into chunked HTML\n");
 
 
