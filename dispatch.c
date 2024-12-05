@@ -284,8 +284,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                 print_buffer_s(curr_message->header, curr_message->header_length);
 
                 if (fact_check == NULL) {
-
-                    // If fact-check is not in the header, send to server
+                    // If fact-check is NOT in the header, send to SERVER
                     n = SSL_write(curr_context->server_ssl, curr_message->header, curr_message->header_length);
                     if (n <= 0) {
                         return false;
@@ -354,9 +353,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         buffer[read_n] = '\0';
         int write_n;
 
-        // Ok, so when we just send it through, it works.
-        // The difficulty comes with breaking down the headers and the message
-        // to try to format it the way we wnat
         write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
         if (write_n <= 0) { return false; }
 
@@ -383,54 +379,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         append(all_messages, curr_message);
 
 
-
-        // message *curr_message = get_message_by_filedes(*all_messages, curr_context->server_fd);
-        // curr_message = insert_new_data(&curr_message, buffer, curr_context->server_fd, all_messages, read_n);
-        // assert(curr_message != NULL);
-
-        // // breakpoint here
-
-        // if (curr_message->msg_complete) {
-            
-        //     // Inject script if content is not a header
-
-        //     // if (curr_message->content != NULL) {
-        //     //     inject_script_into_html(curr_message);
-        //     // }
-
-        //     // printf("HEADER BEFORE:\n");
-        //     // print_buffer_s(curr_message->header, curr_message->header_length);
-
-        //     // // If message uses chunked encoding, update it so that it doesn't
-        //     // if (curr_message->content_type == CHUNKED_ENCODING) {
-        //     //     update_message_header_no_chunk(curr_message);
-        //     // }
-
-        //     //print header
-        //     printf("HEADER AFTER:\n");
-        //     print_buffer_s(curr_message->header, curr_message->header_length);
-
-        //     // Write header to client
-        //     write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->header_length);
-        //     if (write_n <= 0) { return false; }
-
-        //     // If content length is greater than 0, write content to client.
-        //     if (curr_message->content_length > 0) {
-        //         printf("content:\n");
-        //         print_buffer(curr_message->content, curr_message->content_length);
-
-        //         write_n = SSL_write(curr_context->client_ssl, curr_message->content, curr_message->content_length);
-        //         if (write_n <= 0) { return false; }
-        //     }
-
-
-        //     else if (read_n > curr_message->header_length) {
-        //         printf("I still have no clue what is going on here\n");
-        //         write_n = SSL_write(curr_context->client_ssl, buffer + curr_message->header_length, read_n - curr_message->header_length);
-        //     }
-
-        //     removeNode(all_messages, curr_message);
-        // }
 
         return true;
     }  
@@ -981,38 +929,3 @@ void print_buffer_s(char *m, unsigned size)
         printf("\n");
     }
 }
-// int get_header_length(char *buff) {
-//     char *header_end = strstr(buff, "\r\n\r\n");
-//     if (header_end == NULL) {
-//         return -1;
-//     }
-
-//     return header_end - buff + 4;
-// }
-
-// int get_content_length(char *buff) {
-//     // Find the size of the request data
-//     char *content_length_ptr = get_content_length_ptr(buff);
-
-//     if (content_length_ptr != NULL) {
-//         return atoi(content_length_ptr + 16);
-//     } else {
-//         return 0;
-//     }
-// }
-
-// char *reverse_strstr(char *haystack, const char *needle) {
-//     if (!*needle) {
-//         return (char *)haystack;
-//     }
-
-//     char *result = NULL;
-//     char *current;
-
-//     while ((current = strstr(haystack, needle)) != NULL) {
-//         result = current;
-//         haystack = current + 1;
-//     }
-
-//     return result;
-// }
