@@ -1,3 +1,5 @@
+#include "dispatch.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -10,12 +12,9 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <sys/un.h>
-#include "dispatch.h"
 #include <time.h>
 #include <assert.h>
-
 #include <signal.h>
-
 
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 10
@@ -23,7 +22,8 @@
 #define SOCKET_PATH "/tmp/c_dgram_socket"
 #define PYTHON_SOCKET_PATH "/tmp/python_dgram_socket"
 
-void client_disconnect(int client_filedes, Node **ssl_contexts, fd_set *active_read_fd_set);
+void client_disconnect(int client_filedes, Node **ssl_contexts, 
+    fd_set *active_read_fd_set);
 
 int setup_tcp_server_socket(int portno) {
     struct sockaddr_in serveraddr;
@@ -68,11 +68,14 @@ int initialize_LLM_communication(struct sockaddr_un *python_addr) {
     struct sockaddr_un server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sun_family = AF_UNIX;
-    strncpy(server_addr.sun_path, SOCKET_PATH, sizeof(server_addr.sun_path) - 1);
+    strncpy(server_addr.sun_path, SOCKET_PATH, 
+        sizeof(server_addr.sun_path) - 1);
 
     // Bind the socket
     unlink(SOCKET_PATH);
-    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+    if (bind(sockfd, (struct sockaddr *)&server_addr, 
+             sizeof(server_addr)) == -1) 
+    {
         perror("Bind failed");
         close(sockfd);
         return -1;
@@ -81,7 +84,8 @@ int initialize_LLM_communication(struct sockaddr_un *python_addr) {
     // Set up the Python client address
     memset(python_addr, 0, sizeof(*python_addr));
     python_addr->sun_family = AF_UNIX;
-    strncpy(python_addr->sun_path, PYTHON_SOCKET_PATH, sizeof(python_addr->sun_path) - 1);
+    strncpy(python_addr->sun_path, PYTHON_SOCKET_PATH, 
+        sizeof(python_addr->sun_path) - 1);
 
     return sockfd;
 }
@@ -174,15 +178,13 @@ int main(int argc, char **argv)
                         perror("Error on inet_ntoa");
                     }
 
-                    // printf("Server established connection with %s (%s)\n\n", hostp->h_name, hostaddrp);
+                    // printf("Server established connection with %s (%s)\n\n",
+                    //  hostp->h_name, hostaddrp);
 
                     /* Adding new connection request to active socket set */
                     FD_SET(new_fd, &active_read_fd_set);
                     set_max_fd(new_fd, &max_fd);
                 }
-
-                // Couldn't this be an issue if there were multiple servers 
-                // that we were connected to at the same time?
 
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
                     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
