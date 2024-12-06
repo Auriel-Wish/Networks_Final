@@ -14,6 +14,9 @@
 #include <time.h>
 #include <assert.h>
 
+#include <signal.h>
+
+
 #define TIMEOUT ((struct timeval){.tv_sec = TIMEOUT_S, .tv_usec = TIMEOUT_US})
 #define TIMEOUT_S 10
 #define TIMEOUT_US 0
@@ -85,6 +88,8 @@ int initialize_LLM_communication(struct sockaddr_un *python_addr) {
 
 int main(int argc, char **argv)
 {
+    signal(SIGPIPE, SIG_IGN);
+
     int portno;
     int max_fd = 0;
 
@@ -199,7 +204,7 @@ int main(int argc, char **argv)
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
 
-    printf("Trying to disconnect a client\n");
+    printf("Trying to disconnect a client...");
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
     
@@ -229,4 +234,5 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     close(curr_context->server_fd);
 
     removeNode(ssl_contexts, curr_context);
+    printf("Successfully disconnected client\n");
 }
