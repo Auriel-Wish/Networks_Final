@@ -15,10 +15,8 @@
 #include <ctype.h>
 #include <zlib.h>
 
-
 #define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
 #define CHUNK 16384
-
 
 SSL_CTX *create_ssl_context() {
     const SSL_METHOD *method = TLS_server_method(); // Use the TLS server method
@@ -210,9 +208,10 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 
         // Step 3: Send a 200 Connection established response to the client
         const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
-        // trying send instead of write
-        send(fd, connect_response, strlen(connect_response), MSG_NOSIGNAL);
+        
+        // Using send instead of write to be robust to client disconnection
         // write(fd, connect_response, strlen(connect_response));
+        send(fd, connect_response, strlen(connect_response), MSG_NOSIGNAL);
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(client_ssl) <= 0) {
@@ -239,11 +238,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
     } 
     
     else {
-        // printf("Not a CONNECT request\n");
-        
-        for (int i = 0; i < nbytes; i++) {
-            putchar(buffer[i]);
-        }
+        // Not a CONNECT request
         return false;
     }
 }
@@ -260,9 +255,6 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         // setup SSL connection, adds to FD -> SSL mapping
         return handle_connect_request(client_fd, ssl_contexts, active_read_fd_set, max_fd);
     }
-
-    // // check the cache to see if the content is present:
-    // Cache_Response_T *resp = get_response_from_cache(cache, curr_context->hostname);
     
     else {
         // printf("Reading ONE client request\n");
@@ -606,49 +598,6 @@ bool contains_chunk_end(char *buffer, int buffer_length) {
     }
     return false;
 }
-
-// void update_message_header_no_chunk(message *msg) {
-//     if (msg == NULL || msg->header == NULL) {
-//         fprintf(stderr, "Error: message or header is NULL.\n");
-//         return;
-//     }
-
-//     const char *chunked_encoding = "Transfer-Encoding: chunked\r\n";
-//     char content_length_header[64];
-
-//     // Check if "Transfer-Encoding: chunked" exists in the header
-//     char *chunked_position = strstr(msg->header, chunked_encoding);
-//     if (chunked_position == NULL) {
-//         fprintf(stderr, "Error: 'Transfer-Encoding: chunked' not found in header.\n");
-//         return;
-//     }
-
-//     // Create the new "Content-Length" header string
-//     snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %d\r\n", msg->content_length);
-
-//     // Calculate new header size
-//     size_t header_prefix_length = chunked_position - msg->header; // Length of header before "Transfer-Encoding: chunked"
-//     size_t header_suffix_length = strlen(chunked_position + strlen(chunked_encoding)); // Length of header after "Transfer-Encoding: chunked"
-//     size_t new_header_length = header_prefix_length + strlen(content_length_header) + header_suffix_length;
-
-//     // Allocate memory for the new header
-//     char *new_header = (char *)malloc(new_header_length + 1);
-//     if (new_header == NULL) {
-//         fprintf(stderr, "Error: Memory allocation failed for new header.\n");
-//         return;
-//     }
-
-//     // Build the new header
-//     strncpy(new_header, msg->header, header_prefix_length); // Copy part before "Transfer-Encoding: chunked"
-//     new_header[header_prefix_length] = '\0'; // Null-terminate temporarily
-//     strcat(new_header, content_length_header); // Append "Content-Length: ..."
-//     strcat(new_header, chunked_position + strlen(chunked_encoding)); // Append part after "Transfer-Encoding: chunked"
-
-//     // Free the old header and assign the new header to msg
-//     free(msg->header);
-//     msg->header = new_header;
-//     msg->header_length = (int)new_header_length;
-// }
 
 incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, int filedes, Node **all_messages) {
     incomplete_message *curr_message = *msg;
