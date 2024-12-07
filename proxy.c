@@ -85,6 +85,7 @@ int initialize_LLM_communication(struct sockaddr_un *python_addr) {
 
 int main(int argc, char **argv)
 {
+    signal(SIGPIPE, SIG_IGN);
     int portno;
     int max_fd = 0;
 
@@ -198,6 +199,7 @@ int main(int argc, char **argv)
 }
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
+    printf("Disconnecting: %d\n", filedes);
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
     
@@ -205,9 +207,13 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
         curr_context = get_ssl_context_by_server_fd(*ssl_contexts, filedes);
     }
 
+    // printf("\na\n");
+
     if (curr_context == NULL) {
         return;
     }
+    // printf("\nb\n");
+
 
     const char *hostname = SSL_get_servername(curr_context->server_ssl, TLSEXT_NAMETYPE_host_name);
     if (hostname != NULL) {
@@ -218,13 +224,39 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
 
     FD_CLR(curr_context->client_fd, active_read_fd_set);
     FD_CLR(curr_context->server_fd, active_read_fd_set);
+    // printf("\nc\n");
 
-    SSL_shutdown(curr_context->client_ssl);
+    // struct timeval timeout;
+    // timeout.tv_sec = 0;  // No timeout
+    // timeout.tv_usec = 0;
+
+    // if (setsockopt(filedes, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+    //     perror("Failed to set receive timeout");
+    //     fprintf(stderr, "setsockopt failed: %s\n", strerror(errno));
+    // }
+    // if (setsockopt(filedes, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
+    //     perror("Failed to set send timeout");
+    //     fprintf(stderr, "setsockopt failed: %s\n", strerror(errno));
+    // }
+
+
+    // SSL_shutdown(curr_context->client_ssl);
+    // printf("\nc1\n");
     SSL_free(curr_context->client_ssl);
-    SSL_shutdown(curr_context->server_ssl);
+    // printf("\nc2\n");
+    // SSL_shutdown(curr_context->server_ssl);
+    // printf("\nc3\n");
     SSL_free(curr_context->server_ssl);
+    // printf("\nc4\n");
     close(curr_context->client_fd);
+    // printf("\nc5\n");
     close(curr_context->server_fd);
+    // printf("\nd\n");
+
 
     removeNode(ssl_contexts, curr_context);
+    // printf("\ne\n");
+
+
+    // printf("Disconnected: %d\n", filedes);
 }
