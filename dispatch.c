@@ -15,9 +15,26 @@
 #include <netdb.h>
 #include <ctype.h>
 #include <zlib.h>
+#include <fcntl.h>
 
 #define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
 #define CHUNK 16384
+
+void set_socket_timeout(int fd, long timeout_milliseconds) {
+    struct timeval timeout;
+    timeout.tv_sec = timeout_milliseconds / 1000;               // Whole seconds
+    timeout.tv_usec = (timeout_milliseconds % 1000) * 1000;     // Remaining microseconds
+    // Set receive timeout
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        perror("Failed to set receive timeout");
+        fprintf(stderr, "setsockopt failed: %s\n", strerror(errno));
+    }
+    // Set send timeout
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
+        perror("Failed to set send timeout");
+        fprintf(stderr, "setsockopt failed: %s\n", strerror(errno));
+    }
+}
 
 void set_max_fd(int new_fd, int *max_fd) {
     if (new_fd + 1 > *max_fd) {
@@ -206,8 +223,13 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
         // Step 5: Open new connection with the server the client requested
         int port = atoi(strtok(NULL, " "));
         open_new_conn_to_server(hostname, port, &new_context);
-
         assert(new_context != NULL);
+
+        // NOTE: KNOWN BUG: Sometimes the server cannot be correctly connected
+        // to. This creates an issue with the "ERROR, no such host" message
+        // appearing many many times
+
+        //assert(new_context->server_ssl != NULL) // will reveal the issue
         append(ssl_contexts, new_context);
 
         FD_SET(new_context->server_fd, active_read_fd_set);
@@ -220,6 +242,140 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
         // Not a CONNECT request
         return false;
     }
+}
+
+bool handle_fact_check_request(char *buffer, incomplete_message *curr_message,
+    int LLM_sockfd, struct sockaddr_un python_addr, Context_T *curr_context, 
+    Node **all_messages)
+{
+    // If the message is a fact-check request
+    printf("Trying to fact-check prematurely, exiting\n");
+    assert(false);
+
+    char *content_without_header = buffer + curr_message->original_header_length;
+    char *end_of_message = strstr(content_without_header, "\"}");
+    if (end_of_message != NULL) {
+        end_of_message[2] = '\0';
+    }
+
+    if (content_without_header[0] != '{' || content_without_header[strlen(content_without_header) - 1] != '}') {
+        printf("Content is not a JSON object\n");
+        return true;
+    }
+
+    printf("Content to Fact Check: %s\n", content_without_header);
+
+    if (sendto(LLM_sockfd, content_without_header, strlen(content_without_header), 0, (struct sockaddr *)&python_addr, sizeof(python_addr)) == -1) {
+        printf("\nFAILED TO SEND TO PYTHON SCRIPT\n");
+        close(LLM_sockfd);
+        return false;
+    }
+    printf("Waiting for a response from Python script\n");
+
+    socklen_t addr_len = sizeof(python_addr);
+    char LLM_buffer[BUFFER_SIZE];
+    int num_bytes_from_LLM = recvfrom(LLM_sockfd, LLM_buffer, sizeof(LLM_buffer), 0, (struct sockaddr *)&python_addr, &addr_len);
+    printf("Received %d bytes from Python script\n", num_bytes_from_LLM);
+    if (num_bytes_from_LLM == -1) {
+        perror("Receive failed");
+        close(LLM_sockfd);
+        return 1;
+    }
+
+    char *fact_check_response = "HTTP/1.1 200 OK\r\n"
+                                "Content-Type: application/json; charset=utf-8\r\n"
+                                "Content-Length: %d\r\n"
+                                "\r\n"
+                                "%s";
+
+    char fact_check_response_buffer[20000];
+    // int static_part_length = strlen("{\"factCheck\": }"); // Length of the fixed JSON structure
+    // int content_length = static_part_length + num_bytes_from_LLM;
+    // snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, content_length, LLM_buffer);
+    snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, num_bytes_from_LLM, LLM_buffer);
+
+    // printf("Fact Check Response:\n%s\n", fact_check_response_buffer);
+    printf("Writing Fact check response to client...");
+    int write_n = SSL_write(curr_context->client_ssl, fact_check_response_buffer, strlen(fact_check_response_buffer));
+    printf("COMPLETE\n");
+
+    // printf("Wrote fact check response to client\n");
+    if (write_n <= 0) {
+        free(curr_message->header);
+        removeNode(all_messages, curr_message);
+        return false;
+    }
+}
+
+bool handle_general_client_request(incomplete_message *curr_message, int read_n, 
+    Context_T *curr_context, Node **all_messages, char *buffer) {
+        // If the message is a regular client request
+    int write_n = 0;
+    curr_message->content_length_read += read_n;
+    if (!(curr_message->header_sent) && curr_message->header_complete) {
+        int header_length = strlen(curr_message->header);
+
+        // printf("Writing message header to server...");
+        write_n = SSL_write(curr_context->server_ssl, curr_message->header, header_length);
+        // printf("COMPLETE\n");
+
+
+        if (write_n <= 0) {
+            free(curr_message->header);
+            removeNode(all_messages, curr_message);
+            return false;
+        }
+
+        // printf("Wrote header to server: %s\n", curr_message->header);
+
+        curr_message->header_sent = true;
+        curr_message->content_length_read -= curr_message->original_header_length;
+        buffer += curr_message->original_header_length;
+        read_n -= curr_message->original_header_length;
+    }
+
+
+    if (read_n > 0) {
+        if (curr_message->original_content_type != NORMAL_ENCODING) {
+
+            // printf("Writing normal message  contetn to client...");
+            write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
+            // printf("COMPLETE\n");
+
+
+            if (write_n <= 0) {
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+                return false;
+            }
+
+            if (contains_chunk_end(buffer, read_n)) {
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+            }
+        }
+        else {
+            int chunk_data_length = 0;
+            char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
+            if (chunked_data == NULL) {
+                return false;
+            }
+
+            write_n = SSL_write(curr_context->server_ssl, chunked_data, chunk_data_length);
+
+            if (write_n <= 0) {
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+                return false;
+            }
+
+            if (curr_message->content_length_read >= curr_message->content_length) {
+                removeNode(all_messages, curr_message);
+            }
+        }
+    }
+
+    return true;
 }
 
 bool read_client_request(int client_fd, Node **ssl_contexts, 
@@ -236,152 +392,15 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     
     else {
         /* Client already securely connected, reading in a request */
-        // printf("Reading ONE client request\n");
         
         // Step 1: Read existing request
         char buffer_arr[BUFFER_SIZE];
         char *buffer = buffer_arr;
-        int read_n, write_n;
+        int read_n;
 
         read_n = SSL_read(curr_context->client_ssl, buffer, BUFFER_SIZE);
-        
-        if (read_n > 0) {
-            // Step 2: Get any incomplete message already associated with that client
-            incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->client_fd);
-            curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
 
-            // Step 3: See if the message is a fact-check request from the 
-            // client, or a different request
-            char *fact_check = strstr(curr_message->header, "fact-check-CS112-Final");
-            if (fact_check != NULL) {
-                // If the message is a fact-check request
-                char *content_without_header = buffer + curr_message->original_header_length;
-                char *end_of_message = strstr(content_without_header, "\"}");
-                if (end_of_message != NULL) {
-                    end_of_message[2] = '\0';
-                }
-
-                if (content_without_header[0] != '{' || content_without_header[strlen(content_without_header) - 1] != '}') {
-                    printf("Content is not a JSON object\n");
-                    return true;
-                }
-
-                printf("Content to Fact Check: %s\n", content_without_header);
-
-                if (sendto(LLM_sockfd, content_without_header, strlen(content_without_header), 0, (struct sockaddr *)&python_addr, sizeof(python_addr)) == -1) {
-                    printf("\nFAILED TO SEND TO PYTHON SCRIPT\n");
-                    close(LLM_sockfd);
-                    return false;
-                }
-                printf("Waiting for a response from Python script\n");
-
-                socklen_t addr_len = sizeof(python_addr);
-                char LLM_buffer[BUFFER_SIZE];
-                int num_bytes_from_LLM = recvfrom(LLM_sockfd, LLM_buffer, sizeof(LLM_buffer), 0, (struct sockaddr *)&python_addr, &addr_len);
-                printf("Received %d bytes from Python script\n", num_bytes_from_LLM);
-                if (num_bytes_from_LLM == -1) {
-                    perror("Receive failed");
-                    close(LLM_sockfd);
-                    return 1;
-                }
-
-                char *fact_check_response = "HTTP/1.1 200 OK\r\n"
-                                            "Content-Type: application/json; charset=utf-8\r\n"
-                                            "Content-Length: %d\r\n"
-                                            "\r\n"
-                                            "%s";
-
-                char fact_check_response_buffer[20000];
-                // int static_part_length = strlen("{\"factCheck\": }"); // Length of the fixed JSON structure
-                // int content_length = static_part_length + num_bytes_from_LLM;
-                // snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, content_length, LLM_buffer);
-                snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, num_bytes_from_LLM, LLM_buffer);
-
-                // printf("Fact Check Response:\n%s\n", fact_check_response_buffer);
-                printf("Writing Fact check response to client...");
-                write_n = SSL_write(curr_context->client_ssl, fact_check_response_buffer, strlen(fact_check_response_buffer));
-                printf("COMPLETE\n");
-
-                // printf("Wrote fact check response to client\n");
-                if (write_n <= 0) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                    return false;
-                }
-            }
-
-            else {
-                // If the message is a regular client reqquest
-                curr_message->content_length_read += read_n;
-                if (!(curr_message->header_sent) && curr_message->header_complete) {
-                    int header_length = strlen(curr_message->header);
-
-                    printf("Writing message header to client...");
-                    write_n = SSL_write(curr_context->server_ssl, curr_message->header, header_length);
-                    printf("COMPLETE\n");
-
-
-                    if (write_n <= 0) {
-                        free(curr_message->header);
-                        removeNode(all_messages, curr_message);
-                        return false;
-                    }
-
-                    // printf("Wrote header to server: %s\n", curr_message->header);
-
-                    curr_message->header_sent = true;
-                    curr_message->content_length_read -= curr_message->original_header_length;
-                    buffer += curr_message->original_header_length;
-                    read_n -= curr_message->original_header_length;
-                }
-
-                if (read_n > 0) {
-                    if (curr_message->original_content_type != NORMAL_ENCODING) {
-
-                        printf("Writing normal message  contetn to client...");
-
-                        write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
-                        printf("COMPLETE\n");
-
-
-                        if (write_n <= 0) {
-                            free(curr_message->header);
-                            removeNode(all_messages, curr_message);
-                            return false;
-                        }
-
-                        if (contains_chunk_end(buffer, read_n)) {
-                            free(curr_message->header);
-                            removeNode(all_messages, curr_message);
-                        }
-                    }
-                    else {
-                        int chunk_data_length = 0;
-                        char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
-                        if (chunked_data == NULL) {
-                            return false;
-                        }
-
-                        write_n = SSL_write(curr_context->server_ssl, chunked_data, chunk_data_length);
-
-                        if (write_n <= 0) {
-                            free(curr_message->header);
-                            removeNode(all_messages, curr_message);
-                            return false;
-                        }
-
-                        if (curr_message->content_length_read >= curr_message->content_length) {
-                            removeNode(all_messages, curr_message);
-                        }
-                    }
-                }
-
-            }
-
-            return true;
-        } 
-        
-        else {
+        if (read_n <= 0) {
             // Failed to read in anything
             int ssl_error = SSL_get_error(curr_context->client_ssl, read_n);
             if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
@@ -390,14 +409,35 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                 return false; // Close the connection
             }
         }
+        
+        else { // if (read_n > 0)
+            // Step 2: Get any incomplete message already associated with that client
+            incomplete_message *curr_message = 
+                get_incomplete_message_by_filedes(*all_messages, 
+                    curr_context->client_fd);
+            curr_message = modify_header_data(&curr_message, buffer, 
+                curr_context->client_fd, all_messages);
+
+            // Step 3: See if the message is a fact-check request from the 
+            // client, or a different request
+            char *fact_check = strstr(curr_message->header, 
+                "fact-check-CS112-Final");
+            if (fact_check != NULL) {
+                return handle_fact_check_request(buffer, curr_message, 
+                    LLM_sockfd, python_addr, curr_context, all_messages);
+            }
+
+            else {
+                return handle_general_client_request(curr_message, read_n, 
+                    curr_context, all_messages, buffer);
+            }
+        }
     }
 }
 
 bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_messages) {
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
-    if (curr_context == NULL) {
-        return false;
-    }
+    if (curr_context == NULL) { return false; }
 
     char buffer_arr[BUFFER_SIZE];
     char *buffer = buffer_arr;
@@ -405,18 +445,25 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
     int write_n;
 
-    if (read_n > 0) {
+    if (read_n <= 0) {
+        int ssl_error = SSL_get_error(curr_context->server_ssl, read_n);
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+            return true; // Retry the operation later, keep the connection open
+        } else {
+            return false; // Close the connection
+        }
+    }
+
+    else { //if (read_n > 0)
         incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
         curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);            
 
         curr_message->content_length_read += read_n;
+        
+        // If the response header hasn't been sent to the client yet, send it
         if (!(curr_message->header_sent) && curr_message->header_complete) {
             int header_length = strlen(curr_message->header);
-
-            // trying to write back from client
-            printf("Writing resp header to client...");
             write_n = SSL_write(curr_context->client_ssl, curr_message->header, header_length);
-            printf("COMPLETE\n");
 
             if (write_n <= 0) {
                 free(curr_message->header);
@@ -425,14 +472,16 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             }
 
             // printf("Wrote header to client: %s\n", curr_message->header);
-
             curr_message->header_sent = true;
             curr_message->content_length_read -= curr_message->original_header_length;
             buffer += curr_message->original_header_length;
             read_n -= curr_message->original_header_length;
         }
 
+        // If there are more bytes to be sent in the response
         if (read_n > 0) {
+
+            // Weird encoding???
             if (curr_message->original_content_type != NORMAL_ENCODING) {
                 // printf("original_content_type: %d\n", curr_message->original_content_type);
                 
@@ -441,9 +490,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 char *to_send = inject_script_into_chunked_html(buffer, &to_send_length);
 
                 // maybe the injection could be the issue?
-                printf("Injection with normal encoding...");
+                // printf("Injection with normal encoding...");
                 write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-                printf("COMPLETE\n");
+                // printf("COMPLETE\n");
 
                 // No injection
                 // write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
@@ -467,6 +516,8 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     removeNode(all_messages, curr_message);
                 }
             }
+
+            // Normal encoding
             else {
                 int chunk_data_length = 0;
                 char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
@@ -481,9 +532,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 int to_send_length = chunk_data_length;
                 char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
 
-                printf("Injection with chunked encoding...");
+                // printf("Injection with chunked encoding...");
                 write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-                printf("COMPLETE\n");
+                // printf("COMPLETE\n");
                 
                 // No injection
                 // write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
@@ -510,15 +561,5 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         }
 
         return true;
-    }  
-    
-    else {
-        int ssl_error = SSL_get_error(curr_context->server_ssl, read_n);
-        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
-            // Need to retry the operation later
-            return true; // Keep the connection open
-        } else {
-            return false; // Close the connection
-        }
     }
 }

@@ -181,11 +181,12 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     FD_CLR(curr_context->client_fd, active_read_fd_set);
     FD_CLR(curr_context->server_fd, active_read_fd_set);
 
-    // NOTE: for some reason, removing the SSL shutdown fixes an issue for us
+    // NOTE: switching to SSL_quiet_shutdown
     // SSL_shutdown(curr_context->client_ssl);
+    // SSL_shutdown(curr_context->server_ssl);
+
     SSL_set_quiet_shutdown(curr_context->client_ssl, 1);
     SSL_free(curr_context->client_ssl);
-    // SSL_shutdown(curr_context->server_ssl);
     SSL_set_quiet_shutdown(curr_context->client_ssl, 1);
     SSL_free(curr_context->server_ssl);
     close(curr_context->client_fd);
