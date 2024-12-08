@@ -475,25 +475,33 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     else { //if (read_n > 0)
         incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
         if (curr_message == NULL || !(curr_message->header_complete)) {
+            if (curr_message == NULL) {
+                printf("Curr messange is NULL\n");
+            }
             curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);
         }
 
+        // NOTE: known bug: there is a strange issue where quora is sending more
+        // data than we expect after we finish reading in the header
         curr_message->content_length_read += read_n;
         
         // If the response header hasn't been sent to the client yet, send it
         if (!(curr_message->header_sent) && curr_message->header_complete) {
             // printf("Header length %d\n", header_length);
             // printf("In the struct is %d\n", curr_message->original_header_length);
+            printf("About to send the HEADER to client\n\n");
 
             //maybe we put this in the struct when we clean up
             int changed_header_len = strlen(curr_message->header);
             write_n = SSL_write(curr_context->client_ssl, curr_message->header, changed_header_len);
+
 
             if (write_n <= 0) {
                 int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
                 if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                     return true; // Keep the connection open
                 } else {
+                    printf("\nremove node 1\n");
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
                     return false;
@@ -519,6 +527,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
 
                 if (chunked_data == NULL) {
+                    printf("\nremove node 2\n");
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
                     return false;
@@ -542,6 +551,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                         return true; // Keep the connection open
                     } else {
+                        printf("\nremove node 3\n");
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
@@ -549,6 +559,8 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 }
 
                 if (curr_message->content_length_read >= curr_message->content_length) {
+                    printf("\nremove node 4\n");
+                    
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
                 }
@@ -571,6 +583,8 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                         return true; // Keep the connection open
                     } else {
+                        printf("\nremove node 5\n");
+
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         free(new_buffer);
@@ -581,6 +595,8 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 }
 
                 if (contains_chunk_end(new_buffer, new_buffer_length)) {
+                    printf("\nremove node 6\n");
+                    
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
                 }

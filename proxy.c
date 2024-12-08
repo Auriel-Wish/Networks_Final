@@ -177,6 +177,8 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     close(curr_context->client_fd);
     close(curr_context->server_fd);
 
+    printf("\nremove node 7\n");
+
     removeNode(ssl_contexts, curr_context);
     // printf("Successfully disconnected client\n");
 }

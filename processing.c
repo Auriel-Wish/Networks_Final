@@ -118,60 +118,10 @@ bool contains_chunk_end(char *buffer, int buffer_length) {
     return false;
 }
 
-// incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, int filedes, Node **all_messages) {
-//     incomplete_message *curr_message = *msg;
-
-//     if (curr_message == NULL) {
-//         curr_message = malloc(sizeof(incomplete_message));
-//         assert(curr_message != NULL);
-//         curr_message->filedes = filedes;
-//         curr_message->content_length = -1;
-//         curr_message->content_length_read = 0;
-//         curr_message->header_complete = false;
-//         curr_message->header = NULL;
-//         curr_message->original_header_length = 0;
-//         curr_message->header_sent = false;
-//         curr_message->original_content_type = OTHER_ENCODING;
-//         curr_message->rn_state = END_OF_CHUNK;
-
-//         append(all_messages, curr_message);
-//     }
-
-//     if (!(curr_message->header_complete)) {
-//         char *header_end = strstr(buffer, "\r\n\r\n");
-
-//         // NOTE: Known bug: if we recieve a partial header, strstr will not find
-//         // \r\n\r\n, and will do absolutely nothing as a result.
-
-//         if (header_end != NULL) {
-//             curr_message->header_complete = true;
-//             size_t header_length = header_end - buffer + 4;
-//             curr_message->original_header_length = (int)header_length;
-//             curr_message->header = malloc(header_length + 1);
-//             assert(curr_message->header != NULL);
-//             memcpy(curr_message->header, buffer, header_length);
-//             curr_message->header[header_length] = '\0';
-//             buffer += header_length;
-
-//             // Modify request header to not use compression
-//             if (is_request(curr_message->header)) {
-//                 modify_accept_encoding(curr_message);
-//             }
-
-//             // Modify response header to use chunked encoding
-//             else {
-//                 modify_content_type(curr_message);
-//             }
-//             // printf("Header: %s\n", curr_message->header);
-//         }
-//     }
-
-//     return curr_message;
-// }
-
 incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, int filedes, Node **all_messages) {
     incomplete_message *curr_message = *msg;
     if (curr_message == NULL) {
+        printf("\nMAKING NEW MESSAGE\n");
         curr_message = malloc(sizeof(incomplete_message));
         assert(curr_message != NULL);
         curr_message->filedes = filedes;
@@ -185,6 +135,22 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
         curr_message->rn_state = END_OF_CHUNK;
         append(all_messages, curr_message);
     }
+
+    else {
+        printf("\nNOT NEW MESSAGE\n");
+    }
+
+    // // Find \r\n in buffer
+    // char *end_of_line = strstr(buffer, "\r\n");
+    // if (end_of_line != NULL) {
+    //     // Print buffer until \r\n
+    //     printf("contains rn\n");
+    //     fwrite(buffer, 1, end_of_line - buffer, stdout);
+    // } else {
+    //     // Print entire buffer if \r\n is not found
+    //     printf("DOES NOT contains rn\n");
+    //     fwrite(buffer, 1, strlen(buffer), stdout);
+    // }
 
     if (!(curr_message->header_complete)) {
         char *header_end = strstr(buffer, "\r\n\r\n");
@@ -218,6 +184,8 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
             modify_content_type(curr_message);
         }
     }
+
+    // printf("Header is:\n %s\n\n", curr_message->header);
 
     return curr_message;
 }
