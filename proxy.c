@@ -112,9 +112,6 @@ int main(int argc, char **argv)
 
     Node *ssl_contexts = NULL;
 
-    Cache_T *cache = create_cache(20); // setting capacity to be small for now
-    (void)cache;
-
     /* Initialize the set of active sockets */
     FD_ZERO(&active_read_fd_set);
     FD_SET(parentfd, &active_read_fd_set);
@@ -187,7 +184,7 @@ int main(int argc, char **argv)
                 } 
                 
                 else {
-                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, NULL, &all_messages, LLM_sockfd, python_addr)) {
+                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, &all_messages, LLM_sockfd, python_addr)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 }

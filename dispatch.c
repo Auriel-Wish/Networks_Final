@@ -317,33 +317,20 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
 }
 
 bool read_client_request(int client_fd, Node **ssl_contexts, 
-    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache, Node **all_messages, int LLM_sockfd, struct sockaddr_un python_addr) {
+    fd_set *active_read_fd_set, int *max_fd, Node **all_messages, int LLM_sockfd, struct sockaddr_un python_addr) {
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, client_fd);
-    (void)cache;
     
     if (curr_context == NULL) {
         /* No SSL Context associated with this file descriptor */
-
-        // read HTTP CONNECT (should be a connect)
-        // setup SSL connection, adds to FD -> SSL mapping
-                        // printf("\n13\n");
-
         return handle_connect_request(client_fd, ssl_contexts, active_read_fd_set, max_fd);
     }
-
-    // // check the cache to see if the content is present:
-    // Cache_Response_T *resp = get_response_from_cache(cache, curr_context->hostname);
-    
     else {
-        // printf("Reading ONE client request\n");
         char buffer_arr[BUFFER_SIZE];
         char *buffer = buffer_arr;
         int read_n, write_n;
 
-                        // printf("\n15\n");
-
         read_n = SSL_read(curr_context->client_ssl, buffer, BUFFER_SIZE);
-                        // printf("\n16\n");
+        printf("Read %d bytes from client\n", read_n);
         
         if (read_n > 0) {
             incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->client_fd);
@@ -351,7 +338,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                 curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
             }
 
-                
+            // FIX HEADER LENGTH FOR FACT CHECK                
             char *fact_check = strstr(curr_message->header, "fact-check-CS112-Final");
             // printf("\n17.5\n");
             if (fact_check != NULL) {
@@ -409,13 +396,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
             else {
                 curr_message->content_length_read += read_n;
                 if (!(curr_message->header_sent) && curr_message->header_complete) {
-                    int header_length = strlen(curr_message->header);
-                        // printf("\n18\n");
-
-                // printf("\nwriting %d bytes to server\n", header_length);
-
-                    write_n = SSL_write(curr_context->server_ssl, curr_message->header, header_length);
-                        // printf("\n19\n");
+                    write_n = SSL_write(curr_context->server_ssl, curr_message->header, curr_message->original_header_length);
 
                     if (write_n <= 0) {
                         free(curr_message->header);
@@ -423,66 +404,41 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                         return false;
                     }
 
-                    // printf("Wrote header to server: %s\n", curr_message->header);
+                    char *end_of_header = strstr(buffer, "\r\n\r\n");
+                    int curr_part_of_header_length = end_of_header - buffer + 4;
 
                     curr_message->header_sent = true;
                     curr_message->content_length_read -= curr_message->original_header_length;
-                    buffer += curr_message->original_header_length;
-                    read_n -= curr_message->original_header_length;
+                    buffer += curr_part_of_header_length;
+                    read_n -= curr_part_of_header_length;
                 }
 
-                if (read_n > 0) {
-                    if (curr_message->original_content_type != NORMAL_ENCODING) {
-                        // printf("\n20\n");
-
-                        // printf("\nwriting %d bytes to server\n", read_n);
+                if (read_n > 0 && curr_message->header_sent) {
                         write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
-                        // printf("\n21\n");
+
                         if (write_n <= 0) {
                             free(curr_message->header);
                             removeNode(all_messages, curr_message);
                             return false;
                         }
-
+                    if (curr_message->original_content_type == CHUNKED_ENCODING) {
                         if (contains_chunk_end(buffer, read_n)) {
                             free(curr_message->header);
                             removeNode(all_messages, curr_message);
                         }
-                    }
-                    else {
-                        int chunk_data_length = 0;
-                        char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
-                        if (chunked_data == NULL) {
-                            return false;
-                        }
-                        // printf("\n10\n");
-
-                        // printf("\nwriting %d bytes to server\n", chunk_data_length);
-                        write_n = SSL_write(curr_context->server_ssl, chunked_data, chunk_data_length);
-                        // printf("\n11\n");
-                        if (write_n <= 0) {
-                            free(curr_message->header);
-                            removeNode(all_messages, curr_message);
-                            return false;
-                        }
-
-                        if (curr_message->content_length_read >= curr_message->content_length) {
-                            removeNode(all_messages, curr_message);
-                        }
+                    } else if (curr_message->original_content_type == NORMAL_ENCODING && curr_message->content_length_read >= curr_message->content_length) {
+                        free(curr_message->header);
+                        removeNode(all_messages, curr_message);
                     }
                 }
             }
 
             return true;
         } else {
-                        // printf("\n12\n");
-
             int ssl_error = SSL_get_error(curr_context->client_ssl, read_n);
             if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                 return true; // Keep the connection open
             } else {
-                // fprintf(stderr, "SSL read error: %d\n", ssl_error);
-                // printf("Socket: %d\n", curr_context->client_fd);
                 return false; // Close the connection
             }
         }
@@ -628,7 +584,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
                 }
-                // printf("\n24\n");
             }
             else {
                 printf("\nCHUNKED\n");

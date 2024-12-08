@@ -10,11 +10,6 @@ typedef struct Node {
 } Node;
 
 typedef struct {
-    // bool response_complete;
-    // int response_content_length;
-    // int response_header_length;
-    // int response_total_size;
-
     int client_fd;
     int server_fd;
     SSL *client_ssl;
@@ -22,30 +17,6 @@ typedef struct {
 
     char *hostname;
 } Context_T;
-
-// typedef struct {
-//     int filedes;
-
-//     // char msg_type;
-//     int header_length;
-//     int content_length;
-//     int bytes_of_content_read;
-
-//     char *header;
-//     unsigned char *content;
-
-//     bool header_complete;
-//     bool msg_complete;
-
-//     int content_type;
-
-//     // Chunked encoding processing state
-//     int chunk_state;
-//     int chunk_size;
-//     int bytes_read_in_chunk;
-//     char chunk_size_str[16];
-//     int chunk_size_str_index;
-// } message;
 
 typedef struct {
     int filedes;
@@ -72,6 +43,5 @@ void freeList(Node *head);
 
 Context_T *get_ssl_context_by_client_fd(Node *head, int client_fd);
 Context_T *get_ssl_context_by_server_fd(Node *head, int server_fd);
-// message *get_message_by_filedes(Node *head, int filedes);
 incomplete_message *get_incomplete_message_by_filedes(Node *head, int filedes);
 void modify_content_type(incomplete_message *msg);
