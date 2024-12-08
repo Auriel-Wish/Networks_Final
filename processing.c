@@ -211,32 +211,29 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
             strcat(curr_message->header, only_header);
         }
 
-
-        printf("Header length1 %d\n", strlen(curr_message->header));
-        printf("In the struct1 %d\n", curr_message->original_header_length);
         if (is_request(curr_message->header)) {
             modify_accept_encoding(curr_message);
         }
         else {
             modify_content_type(curr_message);
         }
-        printf("Header length2 %d\n", strlen(curr_message->header));
-        printf("In the struct2 %d\n", curr_message->original_header_length);
     }
 
     return curr_message;
 }
 
 void modify_content_type(incomplete_message *msg) {
-    if (msg == NULL || msg->header == NULL) { return; }
+    if (msg == NULL || msg->header == NULL) {
+        return;
+    }
+
+    const char *content_length_str = "Content-Length:";
+    const char *transfer_encoding_str = "Transfer-Encoding: chunked";
 
     char *header = msg->header;
+    char *content_length_start = strcasestr(header, content_length_str); // Case-insensitive search for Content-Length
 
-    // Case-insensitive search for Content-Length
-    const char *content_length_str = "Content-Length:";
-    char *content_length_start = strcasestr(header, content_length_str); 
-
-    if (content_length_start != NULL) {
+    if (content_length_start) {
         msg->original_content_type = NORMAL_ENCODING;
 
         // Extract the content length value
@@ -244,7 +241,6 @@ void modify_content_type(incomplete_message *msg) {
         while (*content_length_value == ' ') {
             content_length_value++;
         }
-
         msg->content_length = atoi(content_length_value);
 
         // Find the end of the Content-Length line
@@ -259,15 +255,13 @@ void modify_content_type(incomplete_message *msg) {
         }
     }
 
-    // Case insensitive search for Transfer-Encoding: chunked 
-    const char *transfer_encoding_str = "Transfer-Encoding: chunked";
+    // Check if Transfer-Encoding: chunked already exists
     char *transfer_encoding_start = strcasestr(header, transfer_encoding_str);
-
-    if (transfer_encoding_start != NULL) {
+    if (transfer_encoding_start) {
         msg->original_content_type = CHUNKED_ENCODING;
     }
 
-    if (msg->original_content_type == NORMAL_ENCODING) {
+    if (msg->original_content_type != CHUNKED_ENCODING) {
         // If Transfer-Encoding: chunked is not present, add it
         const char *chunked_line = "\r\nTransfer-Encoding: chunked";
         size_t chunked_line_length = strlen(chunked_line);

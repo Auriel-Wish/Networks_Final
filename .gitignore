@@ -13,3 +13,4 @@ venv
 out.txt
 config.json
 /checker
+*.txt

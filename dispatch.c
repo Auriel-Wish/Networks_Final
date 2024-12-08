@@ -482,22 +482,32 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         
         // If the response header hasn't been sent to the client yet, send it
         if (!(curr_message->header_sent) && curr_message->header_complete) {
-            int header_length = strlen(curr_message->header);
-            printf("Header length %d\n", header_length);
-            printf("In the struct is %d\n", curr_message->original_header_length);
-            write_n = SSL_write(curr_context->client_ssl, curr_message->header, header_length);
+            // printf("Header length %d\n", header_length);
+            // printf("In the struct is %d\n", curr_message->original_header_length);
+
+            //maybe we put this in the struct when we clean up
+            int changed_header_len = strlen(curr_message->header);
+            write_n = SSL_write(curr_context->client_ssl, curr_message->header, changed_header_len);
 
             if (write_n <= 0) {
-                free(curr_message->header);
-                removeNode(all_messages, curr_message);
-                return false;
+                int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
+                if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+                    return true; // Keep the connection open
+                } else {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                    return false;
+                }
             }
 
-            // printf("Wrote header to client: %s\n", curr_message->header);
+            // NOTE: this is a tricky part
+            char *end_of_header = strstr(buffer, "\r\n\r\n");
+            int curr_part_of_header_length = end_of_header - buffer + 4;
+
             curr_message->header_sent = true;
             curr_message->content_length_read -= curr_message->original_header_length;
-            buffer += curr_message->original_header_length;
-            read_n -= curr_message->original_header_length;
+            buffer += curr_part_of_header_length;
+            read_n -= curr_part_of_header_length;
         }
 
         // If there are more bytes to be sent in the response
@@ -509,16 +519,16 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 
                 // TODO: Only try to do injection if we're at quora
                 // Injection
-                int to_send_length = read_n;
-                char *to_send = inject_script_into_chunked_html(buffer, &to_send_length);
+                // int to_send_length = read_n;
+                // char *to_send = inject_script_into_chunked_html(buffer, &to_send_length);
 
-                // maybe the injection could be the issue?
-                // printf("Injection with normal encoding...");
-                write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
+                // // maybe the injection could be the issue?
+                // // printf("Injection with normal encoding...");
+                // write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
                 // printf("COMPLETE\n");
 
                 // No injection
-                // write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
+                write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
 
                 if (write_n <= 0) {
                     free(curr_message->header);
@@ -543,17 +553,17 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     return false;
                 }
 
-                // TODO: only try to do injection if we're at quora
-                // Injection
-                int to_send_length = chunk_data_length;
-                char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
+                // // TODO: only try to do injection if we're at quora
+                // // Injection
+                // int to_send_length = chunk_data_length;
+                // char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
 
-                // printf("Injection with chunked encoding...");
-                write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
+                // // printf("Injection with chunked encoding...");
+                // write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
                 // printf("COMPLETE\n");
                 
                 // No injection
-                // write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
+                write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
                 
                 if (write_n <= 0) {
                     free(curr_message->header);
