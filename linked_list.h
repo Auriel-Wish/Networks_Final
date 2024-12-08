@@ -1,3 +1,6 @@
+#ifndef LINKED_LIST_H
+#define LINKED_LIST_H
+
 #include <openssl/ssl.h>
 #include <stdbool.h>
 #include <netinet/in.h>
@@ -71,3 +74,5 @@ Context_T *get_ssl_context_by_server_fd(Node *head, int server_fd);
 // message *get_message_by_filedes(Node *head, int filedes);
 incomplete_message *get_incomplete_message_by_filedes(Node *head, int filedes);
 void modify_content_type(incomplete_message *msg);
+
+#endif

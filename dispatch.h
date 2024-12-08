@@ -1,6 +1,8 @@
-// #include "linked_list.h"
-#include "cache.h"
+#ifndef DISPATCH_H
+#define DISPATCH_H
+#include "linked_list.h"
 #include "processing.h"
+#include "cache.h"
 
 #define BUFFER_SIZE 65536 //64KB
 
@@ -30,7 +32,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
 void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context);
 
-
+#endif
 
 
 

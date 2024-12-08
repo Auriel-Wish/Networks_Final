@@ -1,3 +1,6 @@
+#ifndef PROCESSING_H
+#define PROCESSING_H
+
 #include "linked_list.h"
 
 void generate_certificates(const char *hostname);
@@ -19,4 +22,6 @@ char *inject_script_into_chunked_html(char *buffer, int *buffer_length);
 char *get_content_length_ptr(char *str);
 
 void print_buffer(unsigned char *m, unsigned size);
+
+#endif
 

@@ -22,73 +22,16 @@
 #define SOCKET_PATH "/tmp/c_dgram_socket"
 #define PYTHON_SOCKET_PATH "/tmp/python_dgram_socket"
 
+
+
 void client_disconnect(int client_filedes, Node **ssl_contexts, 
     fd_set *active_read_fd_set);
 
-int setup_tcp_server_socket(int portno) {
-    struct sockaddr_in serveraddr;
-    
-    int parentfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (parentfd < 0) {
-        perror("Error opening socket");
-        exit(EXIT_FAILURE);
-    }
+int setup_tcp_server_socket(int portno);
 
-    int optval = 1;
-    setsockopt(parentfd, SOL_SOCKET, SO_REUSEADDR,
-               (const void *)&optval, sizeof(int));
+int initialize_LLM_communication(struct sockaddr_un *python_addr);
 
-    /* build the server's internet address */
-    bzero((char *)&serveraddr, sizeof(serveraddr));
-    serveraddr.sin_family = AF_INET;
-    serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serveraddr.sin_port = htons((unsigned short)portno);
 
-    /* bind the parent socket to the input portno */
-    if (bind(parentfd, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0)
-        perror("Error on binding");
-
-    if (listen(parentfd, 0) < 0)
-        perror("Error on listen");
-    
-    return parentfd;
-}
-
-int initialize_LLM_communication(struct sockaddr_un *python_addr) {
-    int sockfd;
-
-    // Create a Unix domain datagram socket
-    sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
-    if (sockfd == -1) {
-        perror("Socket creation failed");
-        return -1;
-    }
-
-    // Set up the server address
-    struct sockaddr_un server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sun_family = AF_UNIX;
-    strncpy(server_addr.sun_path, SOCKET_PATH, 
-        sizeof(server_addr.sun_path) - 1);
-
-    // Bind the socket
-    unlink(SOCKET_PATH);
-    if (bind(sockfd, (struct sockaddr *)&server_addr, 
-             sizeof(server_addr)) == -1) 
-    {
-        perror("Bind failed");
-        close(sockfd);
-        return -1;
-    }
-
-    // Set up the Python client address
-    memset(python_addr, 0, sizeof(*python_addr));
-    python_addr->sun_family = AF_UNIX;
-    strncpy(python_addr->sun_path, PYTHON_SOCKET_PATH, 
-        sizeof(python_addr->sun_path) - 1);
-
-    return sockfd;
-}
 
 int main(int argc, char **argv)
 {
@@ -186,6 +129,16 @@ int main(int argc, char **argv)
                     set_max_fd(new_fd, &max_fd);
                 }
 
+                else {
+                    // connection request on other socket
+                    int msg_src = client_or_server_fd(ssl_contexts, i);
+                    if (!read_server_response(i, &ssl_contexts, &all_messages)) {
+                        client_disconnect(i, &ssl_contexts, &active_read_fd_set);
+                    }
+
+
+                }
+
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
                     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
@@ -237,4 +190,70 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
 
     removeNode(ssl_contexts, curr_context);
     printf("Successfully disconnected client\n");
+}
+
+
+int setup_tcp_server_socket(int portno) {
+    struct sockaddr_in serveraddr;
+    
+    int parentfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (parentfd < 0) {
+        perror("Error opening socket");
+        exit(EXIT_FAILURE);
+    }
+
+    int optval = 1;
+    setsockopt(parentfd, SOL_SOCKET, SO_REUSEADDR,
+               (const void *)&optval, sizeof(int));
+
+    /* build the server's internet address */
+    bzero((char *)&serveraddr, sizeof(serveraddr));
+    serveraddr.sin_family = AF_INET;
+    serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serveraddr.sin_port = htons((unsigned short)portno);
+
+    /* bind the parent socket to the input portno */
+    if (bind(parentfd, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0)
+        perror("Error on binding");
+
+    if (listen(parentfd, 0) < 0)
+        perror("Error on listen");
+    
+    return parentfd;
+}
+
+int initialize_LLM_communication(struct sockaddr_un *python_addr) {
+    int sockfd;
+
+    // Create a Unix domain datagram socket
+    sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (sockfd == -1) {
+        perror("Socket creation failed");
+        return -1;
+    }
+
+    // Set up the server address
+    struct sockaddr_un server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sun_family = AF_UNIX;
+    strncpy(server_addr.sun_path, SOCKET_PATH, 
+        sizeof(server_addr.sun_path) - 1);
+
+    // Bind the socket
+    unlink(SOCKET_PATH);
+    if (bind(sockfd, (struct sockaddr *)&server_addr, 
+             sizeof(server_addr)) == -1) 
+    {
+        perror("Bind failed");
+        close(sockfd);
+        return -1;
+    }
+
+    // Set up the Python client address
+    memset(python_addr, 0, sizeof(*python_addr));
+    python_addr->sun_family = AF_UNIX;
+    strncpy(python_addr->sun_path, PYTHON_SOCKET_PATH, 
+        sizeof(python_addr->sun_path) - 1);
+
+    return sockfd;
 }

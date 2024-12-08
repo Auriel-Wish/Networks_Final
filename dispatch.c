@@ -19,7 +19,6 @@
 #define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
 #define CHUNK 16384
 
-// Do we even need this function?
 void set_max_fd(int new_fd, int *max_fd) {
     if (new_fd + 1 > *max_fd) {
         *max_fd = new_fd + 1;
