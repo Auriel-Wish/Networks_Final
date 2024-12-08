@@ -197,7 +197,7 @@ void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context)
         } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
             // printf("\nSSL_ERROR_WANT_WRITE\n");
         } else {
-            printf("\nSSL handshake failed to client\n");
+            // printf("\nSSL handshake failed to client\n");
             // ERR_print_errors_fp(stderr);
             SSL_shutdown(server_ssl);
             SSL_free(server_ssl);
@@ -273,7 +273,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         int ssl_accept_result = SSL_accept(client_ssl);
         if (ssl_accept_result <= 0) {
-            printf("SSL handshake failed to client\n");
+            // printf("SSL handshake failed to client\n");
             int ssl_error = SSL_get_error(client_ssl, ssl_accept_result);
             // printf("SSL ERROR NUMBER: %d\n", ssl_error);
             if (ssl_error == SSL_ERROR_WANT_READ) {
@@ -450,7 +450,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                     }
                     else {
                         int chunk_data_length = 0;
-                        char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
+                        char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
                         if (chunked_data == NULL) {
                             return false;
                         }
@@ -488,7 +488,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     }
 }
 
-char *convert_to_chunked_encoding(char *buffer, int buffer_length, incomplete_message *msg, int *chunked_data_length) {
+char *convert_normal_to_chunked_encoding(char *buffer, int buffer_length, incomplete_message *msg, int *chunked_data_length) {
                 // printf("\n8\n");
     if (buffer == NULL || buffer_length <= 0 || msg == NULL) {
         return NULL;
@@ -556,9 +556,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     char buffer_arr[BUFFER_SIZE];
     char *buffer = buffer_arr;
 
-    // printf("\n1\n");
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
-    // printf("\n2\n");
 
     int write_n;
 
@@ -568,13 +566,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
         curr_message->content_length_read += read_n;
         if (!(curr_message->header_sent) && curr_message->header_complete) {
+            printf("SENDING HEADER\n");
             int header_length = strlen(curr_message->header);
-            // printf("\n3\n");
-
-            // printf("\nwriting %d bytes to client %d\n", header_length, curr_context->client_fd);
             write_n = SSL_write(curr_context->client_ssl, curr_message->header, header_length);
-            // printf("\n4\n");
-            // printf("\n1\n");
 
             if (write_n <= 0) {
                 int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
@@ -594,54 +588,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         }
 
         if (read_n > 0) {
-            if (curr_message->original_content_type != NORMAL_ENCODING) {
-                // printf("\n5\n");
-                // printf("\nwriting %d bytes to client %d\n", read_n, curr_context->client_fd);
-                
-                // Injection
-                int to_send_length = read_n;
-                char *to_send = inject_script_into_chunked_html(buffer, &to_send_length);
-
-                // int flags = fcntl(curr_context->client_fd, F_GETFL, 0); // Get the current file descriptor flags
-                // if (flags == -1) {
-                //     perror("fcntl F_GETFL");
-                //     return false;
-                // }
-
-                // if (fcntl(curr_context->client_fd, F_SETFL, flags | O_NONBLOCK) == -1) { // Set the non-blocking flag
-                //     perror("fcntl F_SETFL");
-                //     return false;
-                // }
-
-                // printf("Set non-blocking flag in fd: %d\n", curr_context->client_fd);
-
-                write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-                // printf("\n2\n");
-
-                // No injection
-                // write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
-                // printf("\n6\n");
-
-                if (write_n <= 0) {
-                    int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
-                    if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
-                        return true; // Keep the connection open
-                    } else {
-                        free(curr_message->header);
-                        removeNode(all_messages, curr_message);
-                        return false;
-                    }
-                }
-
-                if (contains_chunk_end(buffer, read_n)) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                }
-                // printf("\n7\n");
-            }
-            else {
+            if (curr_message->original_content_type == NORMAL_ENCODING) {
                 int chunk_data_length = 0;
-                char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
+                char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
 
                 if (chunked_data == NULL) {
                     free(curr_message->header);
@@ -649,15 +598,10 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     return false;
                 }
 
-                // printf("\nwriting %d bytes to client %d\n", chunk_data_length, curr_context->client_fd);
-                // printf("\n22\n");
-
                 // Injection
                 int to_send_length = chunk_data_length;
                 char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
                 write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-            // printf("\n3\n");
-
 
                 // No injection
                 // write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
@@ -681,6 +625,35 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 }
                 // printf("\n24\n");
             }
+            else {
+                int new_buffer_length = 0;
+                printf("Processing chunked data: %s\n", buffer);
+                char *new_buffer = process_chunked_data(curr_message, buffer, &read_n, &new_buffer_length);
+                printf("Processed chunked data\n");
+                
+                // Injection CHANGE LENGTHS AND NEW BUFFER
+                // char *to_send = inject_script_into_chunked_html(new_buffer, &new_buffer_length);
+                // write_n = SSL_write(curr_context->client_ssl, to_send, new_buffer_length);
+
+                // No injection
+                write_n = SSL_write(curr_context->client_ssl, new_buffer, new_buffer_length);
+
+                if (write_n <= 0) {
+                    int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
+                    if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+                        return true; // Keep the connection open
+                    } else {
+                        free(curr_message->header);
+                        removeNode(all_messages, curr_message);
+                        return false;
+                    }
+                }
+
+                if (contains_chunk_end(new_buffer, new_buffer_length)) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                }
+            }
         }
 
         return true;
@@ -700,12 +673,192 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     }
 }
 
+char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_size, int *output_size) {
+    // Initialize variables
+    char *new_buffer = NULL;
+    int new_buffer_capacity = 0;
+    int new_buffer_length = 0;
+
+    int pos = 0;          // Current position in the buffer
+    int start = 0;        // Start position for data to be added
+    bool done = false;    // Flag to indicate completion (e.g., encountered 0\r\n\r\n)
+
+    while (pos < *buffer_size && !done) {
+        // Search for the next occurrence of "\r\n"
+        char *crlf = memchr(buffer + pos, '\r', *buffer_size - pos);
+        if (crlf && (crlf - buffer + 1) < *buffer_size && *(crlf + 1) == '\n') {
+            int crlf_pos = crlf - buffer;
+            int line_length = crlf_pos - pos;
+
+            if (msg->rn_state == END_OF_CHUNK) {
+                // Currently expecting a chunk size line
+                // Extract the chunk size
+                char chunk_size_str[32];
+                int copy_length = (line_length < (int)(sizeof(chunk_size_str) - 1)) ? line_length : (int)(sizeof(chunk_size_str) - 1);
+                memcpy(chunk_size_str, buffer + pos, copy_length);
+                chunk_size_str[copy_length] = '\0';
+
+                // Convert hex string to integer
+                int chunk_size = (int)strtol(chunk_size_str, NULL, 16);
+                
+                if (chunk_size == 0) {
+                    // Edge case: 0\r\n\r\n indicates the end of chunks
+                    done = true;
+                }
+
+                // Update state to END_OF_HEADER
+                msg->rn_state = END_OF_HEADER;
+
+                // Move position past "\r\n"
+                pos = crlf_pos + 2;
+                start = pos;
+
+                // If chunk size is zero, break after processing
+                if (chunk_size == 0) {
+                    break;
+                }
+            } else if (msg->rn_state == END_OF_HEADER) {
+                // Currently expecting chunk data followed by "\r\n"
+                // Calculate the expected end of chunk data
+                int data_end = crlf_pos;
+                int data_length = data_end - start;
+
+                // Ensure the chunk size matches the expected data length
+                // (Optional: Add validation if necessary)
+
+                // Allocate or expand new_buffer to hold the data
+                if (new_buffer_length + data_length > new_buffer_capacity) {
+                    // Increase capacity (e.g., double the size or set to required size)
+                    new_buffer_capacity = (new_buffer_length + data_length) * 2;
+                    char *temp = realloc(new_buffer, new_buffer_capacity);
+                    if (!temp) {
+                        // Allocation failed
+                        free(new_buffer);
+                        return NULL;
+                    }
+                    new_buffer = temp;
+                }
+
+                // Append the chunk data to new_buffer
+                memcpy(new_buffer + new_buffer_length, buffer + start, data_length);
+                new_buffer_length += data_length;
+
+                // Update state to END_OF_CHUNK
+                msg->rn_state = END_OF_CHUNK;
+
+                // Move position past "\r\n"
+                pos = crlf_pos + 2;
+                start = pos;
+            }
+        } else {
+            // No more "\r\n" found in the buffer
+            if (msg->rn_state == END_OF_CHUNK) {
+                // Incomplete chunk size line, store the remaining data
+                // (Optional: Handle incomplete lines by storing in msg->header or similar)
+                // For simplicity, we'll ignore incomplete data in this implementation
+                break;
+            } else if (msg->rn_state == END_OF_HEADER) {
+                // Incomplete chunk data, append whatever is available
+                int data_length = *buffer_size - start;
+
+                // Allocate or expand new_buffer to hold the data
+                if (new_buffer_length + data_length > new_buffer_capacity) {
+                    // Increase capacity
+                    new_buffer_capacity = (new_buffer_length + data_length) * 2;
+                    char *temp = realloc(new_buffer, new_buffer_capacity);
+                    if (!temp) {
+                        // Allocation failed
+                        free(new_buffer);
+                        return NULL;
+                    }
+                    new_buffer = temp;
+                }
+
+                // Append the available chunk data to new_buffer
+                memcpy(new_buffer + new_buffer_length, buffer + start, data_length);
+                new_buffer_length += data_length;
+
+                // Update position
+                pos = *buffer_size;
+                start = pos;
+            }
+        }
+    }
+
+    // After processing all chunks, prepend a single chunk header to new_buffer
+    // Convert new_buffer_length to hexadecimal string
+    char final_chunk_header[32];
+    int header_length = snprintf(final_chunk_header, sizeof(final_chunk_header), "%X\r\n", new_buffer_length);
+    if (header_length < 0) {
+        // snprintf failed
+        free(new_buffer);
+        return NULL;
+    }
+
+    // Calculate total size: header + data + final "\r\n"
+    int total_size = header_length + new_buffer_length + 2;
+    char *final_buffer = malloc(total_size);
+    if (!final_buffer) {
+        // Allocation failed
+        free(new_buffer);
+        return NULL;
+    }
+
+    // Copy the header
+    memcpy(final_buffer, final_chunk_header, header_length);
+
+    // Copy the data
+    memcpy(final_buffer + header_length, new_buffer, new_buffer_length);
+
+    // Append the final "\r\n"
+    final_buffer[header_length + new_buffer_length] = '\r';
+    final_buffer[header_length + new_buffer_length + 1] = '\n';
+
+    // Free the intermediate new_buffer
+    free(new_buffer);
+
+    // Handle the edge case where the original buffer contained "0\r\n\r\n"
+    if (done) {
+        // Allocate space for "0\r\n\r\n"
+        char *end_chunk = "0\r\n\r\n";
+        int end_chunk_length = 5;
+
+        // Reallocate final_buffer to append "0\r\n\r\n"
+        final_buffer = realloc(final_buffer, total_size + end_chunk_length);
+        if (!final_buffer) {
+            // Allocation failed
+            return NULL;
+        }
+
+        // Append "0\r\n\r\n" to indicate the end of chunks
+        memcpy(final_buffer + total_size, end_chunk, end_chunk_length);
+        total_size += end_chunk_length;
+    }
+
+    // Set the output size
+    *output_size = total_size;
+
+    return final_buffer;
+}
+
 bool contains_chunk_end(char *buffer, int buffer_length) {
     for (int i = 0; i < buffer_length - 4; i++) {
         if (buffer[i] == '0' && buffer[i + 1] == '\r' && buffer[i + 2] == '\n' && buffer[i + 3] == '\r' && buffer[i + 4] == '\n') {
             return true;
         }
     }
+    return false;
+}
+
+bool is_request(char *buffer) {
+    if (buffer == NULL) {
+        return false;
+    }
+
+    if (strncmp(buffer, "GET", 3) == 0 || strncmp(buffer, "POST", 4) == 0 || strncmp(buffer, "PUT", 3) == 0 || strncmp(buffer, "DELETE", 6) == 0) {
+        return true;
+    }
+
     return false;
 }
 
@@ -722,6 +875,7 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
         curr_message->original_header_length = 0;
         curr_message->header_sent = false;
         curr_message->original_content_type = OTHER_ENCODING;
+        curr_message->rn_state = END_OF_CHUNK;
         append(all_messages, curr_message);
     }
 
@@ -737,8 +891,14 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
             curr_message->header[header_length] = '\0';
             buffer += header_length;
 
-            modify_content_type(curr_message);
-            modify_accept_encoding(curr_message);
+            if (is_request(curr_message->header)) {
+                modify_accept_encoding(curr_message);
+            }
+            else {
+                modify_content_type(curr_message);
+            }
+
+            printf("Header: %s\n", curr_message->header);
         }
     }
 
@@ -784,7 +944,7 @@ void modify_content_type(incomplete_message *msg) {
         msg->original_content_type = CHUNKED_ENCODING;
     }
 
-    if (msg->original_content_type == NORMAL_ENCODING) {
+    if (msg->original_content_type != CHUNKED_ENCODING) {
         // If Transfer-Encoding: chunked is not present, add it
         const char *chunked_line = "\r\nTransfer-Encoding: chunked";
         size_t chunked_line_length = strlen(chunked_line);
@@ -901,137 +1061,17 @@ void set_max_fd(int new_fd, int *max_fd) {
 }
 
 char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
-    // char *quora_last_line = "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})})},100)})";
+    char *quora_last_line = "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})})},100)})";
     const char *body_tag = "</body>";
 
-    // if (strstr(buffer, quora_last_line) == NULL || strstr(buffer, body_tag) == NULL) {
-    //     return buffer;
-    // }
-    if (strstr(buffer, body_tag) == NULL) {
+    if (strstr(buffer, quora_last_line) == NULL || strstr(buffer, body_tag) == NULL) {
         return buffer;
     }
+    // if (strstr(buffer, body_tag) == NULL) {
+    //     return buffer;
+    // }
     printf("Attempting to inject script into chunked HTML\n");
 
-
-    // const char *script_to_inject = 
-    //         "<script>"
-    //         "document.addEventListener('DOMContentLoaded', () => {"
-    //         "  const factCheckButton = document.createElement('button');"
-    //         "  factCheckButton.innerText = 'Run Fact Check';"
-    //         "  factCheckButton.style.position = 'fixed';"
-    //         "  factCheckButton.style.bottom = '10px';"
-    //         "  factCheckButton.style.right = '10px';"
-    //         "  factCheckButton.style.zIndex = '9999';"
-    //         "  factCheckButton.style.padding = '15px';"
-    //         "  factCheckButton.style.backgroundColor = 'white';"
-    //         "  factCheckButton.style.borderRadius = '5px';"
-    //         "  factCheckButton.style.cursor = 'pointer';"
-    //         "  factCheckButton.style.color = 'black';"
-    //         "  factCheckButton.style.border = 'none';"
-    //         "  factCheckButton.style.fontSize = 'large';"
-    //         "  factCheckButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
-    //         "  factCheckButton.style.transition = 'background-color 0.3s';"
-    //         "  factCheckButton.addEventListener('mouseover', () => {"
-    //         "     factCheckButton.style.backgroundColor = 'gainsboro';"
-    //         "  });"
-    //         "  factCheckButton.addEventListener('mouseout', () => {"
-    //         "     factCheckButton.style.backgroundColor = 'white';"
-    //         "  });"
-    //         "  document.body.appendChild(factCheckButton);"
-    //         ""
-    //         "  const toggleButton = document.createElement('button');"
-    //         "  toggleButton.innerText = '↑';"
-    //         "  toggleButton.style.position = 'fixed';"
-    //         "  toggleButton.style.bottom = '75px';"
-    //         "  toggleButton.style.right = '10px';"
-    //         "  toggleButton.style.zIndex = '9999';"
-    //         "  toggleButton.style.padding = '10px';"
-    //         "  toggleButton.style.backgroundColor = 'white';"
-    //         "  toggleButton.style.borderRadius = '5px';"
-    //         "  toggleButton.style.cursor = 'pointer';"
-    //         "  toggleButton.style.color = 'black';"
-    //         "  toggleButton.style.border = 'none';"
-    //         "  toggleButton.style.fontSize = 'large';"
-    //         "  toggleButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
-    //         "  toggleButton.style.transition = 'background-color 0.3s';"
-    //         "  toggleButton.addEventListener('mouseover', () => {"
-    //         "     toggleButton.style.backgroundColor = 'gainsboro';"
-    //         "  });"
-    //         "  toggleButton.addEventListener('mouseout', () => {"
-    //         "     toggleButton.style.backgroundColor = 'white';"
-    //         "  });"
-    //         "  document.body.appendChild(toggleButton);"
-    //         ""
-    //         "  let popupDiv = null;" // Store reference to the popupDiv
-    //         "  let is_first = true;"
-    //         ""
-    //         "  factCheckButton.addEventListener('click', async () => {"
-    //         "    const selection = window.getSelection().toString();"
-    //         "    if (selection) {"
-    //         "      if (!popupDiv) {"
-    //         "        popupDiv = document.createElement('div');"
-    //         "        popupDiv.style.position = 'fixed';"
-    //         "        popupDiv.style.top = '10%';"
-    //         "        popupDiv.style.left = '50%';"
-    //         "        popupDiv.style.transform = 'translateX(-50%)';"
-    //         "        popupDiv.style.maxHeight = '50%';"
-    //         "        popupDiv.style.overflowY = 'auto';"
-    //         "        popupDiv.style.padding = '20px';"
-    //         "        popupDiv.style.width = '60%';"
-    //         "        popupDiv.style.backgroundColor = 'white';"
-    //         "        popupDiv.style.color = 'black';"
-    //         "        popupDiv.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';"
-    //         "        popupDiv.style.zIndex = '10000';"
-    //         "        popupDiv.style.borderRadius = '8px';"
-    //         "        popupDiv.style.display = 'none';" // Initially hidden
-    //         "        popupDiv.innerHTML = "
-    //         "          `<div style='display: flex; justify-content: space-between; align-items: center;'>"
-    //         "            <button id='close-button' style='background: none; border: none; font-size: 18px; cursor: pointer; color: black'>&times;</button>"
-    //         "          </div>"
-    //         "          <div id='fact-check-results'></div>`;" // Container for cumulative results
-    //         ""
-    //         "        const closeButton = popupDiv.querySelector('#close-button');"
-    //         "        closeButton.addEventListener('click', () => {"
-    //         "          popupDiv.style.display = 'none';" // Hide the popupDiv
-    //         "        });"
-    //         ""
-    //         "        document.body.appendChild(popupDiv);"
-    //         "      }"
-    //         ""
-    //         "      popupDiv.style.display = 'block';" // Show the popupDiv
-    //         "      const resultsContainer = popupDiv.querySelector('#fact-check-results');"
-    //         ""
-    //         "      const loadingMessage = document.createElement('p');"
-    //         "      loadingMessage.style.fontSize = 'large';"
-    //         "      loadingMessage.innerHTML = '<strong>Fact checking...<br><br></strong>';"
-    //         "      resultsContainer.prepend(loadingMessage);"
-    //         ""
-    //         "      try {"
-    //         "        const response = await fetch('https://www.quora.com/ajax/receive_POST?fact-check-CS112-Final=True', {"
-    //         "          method: 'POST',"
-    //         "          headers: { 'Content-Type': 'application/json' },"
-    //         "          body: JSON.stringify({ text: selection })"
-    //         "        });"
-    //         "        const result = await response.json();"
-    //         "        const factCheckResult = document.createElement('div');"
-    //         "        if (is_first) {factCheckResult.innerHTML = `<p>${result.factCheck}</p>`; is_first = false}"
-    //         "        else {factCheckResult.innerHTML = `<p>${result.factCheck}</p><hr style=\"margin: 30px auto; text-align: center; border: 1px black solid; width: 80%\">`;}"
-    //         "        resultsContainer.prepend(factCheckResult);"
-    //         "        loadingMessage.remove();"
-    //         "      } catch (error) {"
-    //         "        loadingMessage.remove();"
-    //         "        alert('Unable to fact check. Please try again.');"
-    //         "      }"
-    //         "    }"
-    //         "  });"
-    //         ""
-    //         "  toggleButton.addEventListener('click', () => {"
-    //         "    if (popupDiv) {"
-    //         "      popupDiv.style.display = popupDiv.style.display === 'none' ? 'block' : 'none';"
-    //         "    }"
-    //         "  });"
-    //         "});"
-    //         "</script>";
 
     const char *script_to_inject = 
     "<div id='fact-check-container'>"

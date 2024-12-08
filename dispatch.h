@@ -47,4 +47,6 @@ void modify_accept_encoding(incomplete_message *curr_message);
 
 bool contains_chunk_end(char *buffer, int buffer_length);
 
-char *convert_to_chunked_encoding(char *buffer, int buffer_length, incomplete_message *msg, int *chunked_data_length);
+char *convert_normal_to_chunked_encoding(char *buffer, int buffer_length, incomplete_message *msg, int *chunked_data_length);
+
+char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_size, int *output_size);
