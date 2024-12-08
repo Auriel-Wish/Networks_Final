@@ -347,8 +347,9 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         
         if (read_n > 0) {
             incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->client_fd);
-            curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
-                        // printf("\n17\n");
+            if (curr_message == NULL || !(curr_message->header_complete)) {
+                curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
+            }
 
                 
             char *fact_check = strstr(curr_message->header, "fact-check-CS112-Final");
@@ -562,13 +563,13 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
     if (read_n > 0) {
         incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
-        curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);
+        if (curr_message == NULL || !(curr_message->header_complete)) {
+            curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);
+        }
 
         curr_message->content_length_read += read_n;
         if (!(curr_message->header_sent) && curr_message->header_complete) {
-            printf("SENDING HEADER\n");
-            int header_length = strlen(curr_message->header);
-            write_n = SSL_write(curr_context->client_ssl, curr_message->header, header_length);
+            write_n = SSL_write(curr_context->client_ssl, curr_message->header, curr_message->original_header_length);
 
             if (write_n <= 0) {
                 int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
@@ -581,14 +582,18 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 }
             }
 
+            char *end_of_header = strstr(buffer, "\r\n\r\n");
+            int curr_part_of_header_length = end_of_header - buffer + 4;
+
             curr_message->header_sent = true;
-            curr_message->content_length_read -= curr_message->original_header_length;
-            buffer += curr_message->original_header_length;
-            read_n -= curr_message->original_header_length;
+            curr_message->content_length_read -= curr_part_of_header_length;
+            buffer += curr_part_of_header_length;
+            read_n -= curr_part_of_header_length;
         }
 
-        if (read_n > 0) {
+        if (read_n > 0 && curr_message->header_sent) {
             if (curr_message->original_content_type == NORMAL_ENCODING) {
+                printf("\nNORMAL\n");
                 int chunk_data_length = 0;
                 char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
 
@@ -626,10 +631,10 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 // printf("\n24\n");
             }
             else {
+                printf("\nCHUNKED\n");
+
                 int new_buffer_length = 0;
-                printf("Processing chunked data: %s\n", buffer);
                 char *new_buffer = process_chunked_data(curr_message, buffer, &read_n, &new_buffer_length);
-                printf("Processed chunked data\n");
                 
                 // Injection CHANGE LENGTHS AND NEW BUFFER
                 // char *to_send = inject_script_into_chunked_html(new_buffer, &new_buffer_length);
@@ -881,24 +886,34 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
 
     if (!(curr_message->header_complete)) {
         char *header_end = strstr(buffer, "\r\n\r\n");
+        char *only_header = NULL;
         if (header_end != NULL) {
             curr_message->header_complete = true;
-            size_t header_length = header_end - buffer + 4;
-            curr_message->original_header_length = (int)header_length;
-            curr_message->header = malloc(header_length + 1);
+            only_header = malloc(header_end - buffer + 4);
+            memcpy(only_header, buffer, header_end - buffer + 4);
+            only_header[header_end - buffer + 4] = '\0';
+        }
+        else {
+            only_header = malloc(strlen(buffer) + 1);
+            strcpy(only_header, buffer);
+        }
+
+        curr_message->original_header_length += strlen(only_header);
+        if (curr_message->header == NULL) {
+            curr_message->header = malloc(curr_message->original_header_length + 1);
             assert(curr_message->header != NULL);
-            memcpy(curr_message->header, buffer, header_length);
-            curr_message->header[header_length] = '\0';
-            buffer += header_length;
+            strcpy(curr_message->header, only_header);
+        } else {
+            curr_message->header = realloc(curr_message->header, curr_message->original_header_length + 1);
+            assert(curr_message->header != NULL);
+            strcat(curr_message->header, only_header);
+        }
 
-            if (is_request(curr_message->header)) {
-                modify_accept_encoding(curr_message);
-            }
-            else {
-                modify_content_type(curr_message);
-            }
-
-            printf("Header: %s\n", curr_message->header);
+        if (is_request(curr_message->header)) {
+            modify_accept_encoding(curr_message);
+        }
+        else {
+            modify_content_type(curr_message);
         }
     }
 
