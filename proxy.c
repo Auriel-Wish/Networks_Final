@@ -129,15 +129,15 @@ int main(int argc, char **argv)
                     set_max_fd(new_fd, &max_fd);
                 }
 
-                else {
-                    // connection request on other socket
-                    int msg_src = client_or_server_fd(ssl_contexts, i);
-                    if (!read_server_response(i, &ssl_contexts, &all_messages)) {
-                        client_disconnect(i, &ssl_contexts, &active_read_fd_set);
-                    }
+                // else {
+                //     // connection request on other socket
+                //     int msg_src = client_or_server_fd(ssl_contexts, i);
+                //     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
+                //         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
+                //     }
 
 
-                }
+                // }
 
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
                     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
@@ -159,7 +159,7 @@ int main(int argc, char **argv)
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
 
-    printf("Trying to disconnect a client...");
+    // printf("Trying to disconnect a client...");
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
     
@@ -181,15 +181,18 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     FD_CLR(curr_context->client_fd, active_read_fd_set);
     FD_CLR(curr_context->server_fd, active_read_fd_set);
 
-    SSL_shutdown(curr_context->client_ssl);
+    // NOTE: for some reason, removing the SSL shutdown fixes an issue for us
+    // SSL_shutdown(curr_context->client_ssl);
+    SSL_set_quiet_shutdown(curr_context->client_ssl, 1);
     SSL_free(curr_context->client_ssl);
-    SSL_shutdown(curr_context->server_ssl);
+    // SSL_shutdown(curr_context->server_ssl);
+    SSL_set_quiet_shutdown(curr_context->client_ssl, 1);
     SSL_free(curr_context->server_ssl);
     close(curr_context->client_fd);
     close(curr_context->server_fd);
 
     removeNode(ssl_contexts, curr_context);
-    printf("Successfully disconnected client\n");
+    // printf("Successfully disconnected client\n");
 }
 
 
