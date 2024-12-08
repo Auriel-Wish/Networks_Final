@@ -20,10 +20,10 @@
 #define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
 #define CHUNK 16384
 
-void set_socket_timeout(int fd, long timeout_milliseconds) {
+void set_socket_timeout(int fd, long timeout_millisecs) {
     struct timeval timeout;
-    timeout.tv_sec = timeout_milliseconds / 1000;               // Whole seconds
-    timeout.tv_usec = (timeout_milliseconds % 1000) * 1000;     // Remaining microseconds
+    timeout.tv_sec = timeout_millisecs / 1000;           // Whole seconds
+    timeout.tv_usec = (timeout_millisecs % 1000) * 1000; // Remainder microsecs
     // Set receive timeout
     if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
         perror("Failed to set receive timeout");
@@ -354,6 +354,7 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
                 removeNode(all_messages, curr_message);
             }
         }
+
         else {
             int chunk_data_length = 0;
             char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
@@ -435,6 +436,133 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
     }
 }
 
+bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_messages) {
+    Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
+    if (curr_context == NULL) { return false; }
+
+    // printf("Trying to get data from hostname: %s\n", curr_context->hostname);
+    bool at_quora = (strcmp("www.quora.com", curr_context->hostname) == 0);
+    if (at_quora) {
+        // printf("Getting ready to search quora\n");
+    }
+
+    char buffer_arr[BUFFER_SIZE];
+    char *buffer = buffer_arr;
+    int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
+
+    int write_n;
+
+    if (read_n <= 0) {
+        int ssl_error = SSL_get_error(curr_context->server_ssl, read_n);
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+            return true; // Retry the operation later, keep the connection open
+        } else {
+            return false; // Close the connection
+        }
+    }
+
+    else { //if (read_n > 0)
+        incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
+        curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);            
+
+        curr_message->content_length_read += read_n;
+        
+        // If the response header hasn't been sent to the client yet, send it
+        if (!(curr_message->header_sent) && curr_message->header_complete) {
+            int header_length = strlen(curr_message->header);
+            write_n = SSL_write(curr_context->client_ssl, curr_message->header, header_length);
+
+            if (write_n <= 0) {
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+                return false;
+            }
+
+            // printf("Wrote header to client: %s\n", curr_message->header);
+            curr_message->header_sent = true;
+            curr_message->content_length_read -= curr_message->original_header_length;
+            buffer += curr_message->original_header_length;
+            read_n -= curr_message->original_header_length;
+        }
+
+        // If there are more bytes to be sent in the response
+        if (read_n > 0) {
+
+            // Weird encoding???
+            if (curr_message->original_content_type != NORMAL_ENCODING) {
+                // printf("original_content_type: %d\n", curr_message->original_content_type);
+                
+                // TODO: Only try to do injection if we're at quora
+                // Injection
+                int to_send_length = read_n;
+                char *to_send = inject_script_into_chunked_html(buffer, &to_send_length);
+
+                // maybe the injection could be the issue?
+                // printf("Injection with normal encoding...");
+                write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
+                // printf("COMPLETE\n");
+
+                // No injection
+                // write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
+
+                if (write_n <= 0) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                    return false;
+                }
+
+                if (contains_chunk_end(buffer, read_n)) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                }
+            }
+
+            else { // content_type == NORMAL_ENCODING
+
+                int chunk_data_length = 0;
+                char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
+
+                if (chunked_data == NULL) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                    return false;
+                }
+
+                // TODO: only try to do injection if we're at quora
+                // Injection
+                int to_send_length = chunk_data_length;
+                char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
+
+                // printf("Injection with chunked encoding...");
+                write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
+                // printf("COMPLETE\n");
+                
+                // No injection
+                // write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
+                
+                if (write_n <= 0) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                    return false;
+                }
+
+                if (curr_message->content_length_read >= curr_message->content_length) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                }
+            }
+
+
+        }
+
+        return true;
+    }
+}
+
+
+// // Old version
+
+/*
 bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_messages) {
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
     if (curr_context == NULL) { return false; }
@@ -563,3 +691,4 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         return true;
     }
 }
+*/

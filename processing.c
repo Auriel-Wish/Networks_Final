@@ -120,6 +120,7 @@ bool contains_chunk_end(char *buffer, int buffer_length) {
 
 incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, int filedes, Node **all_messages) {
     incomplete_message *curr_message = *msg;
+    
     if (curr_message == NULL) {
         curr_message = malloc(sizeof(incomplete_message));
         assert(curr_message != NULL);
@@ -147,7 +148,9 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
             buffer += header_length;
 
             modify_content_type(curr_message);
-            modify_accept_encoding(curr_message);
+
+            // NOTE: What does modify accept encoding do?
+            // modify_accept_encoding(curr_message);
         }
     }
 
@@ -155,17 +158,15 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
 }
 
 void modify_content_type(incomplete_message *msg) {
-    if (msg == NULL || msg->header == NULL) {
-        return;
-    }
-
-    const char *content_length_str = "Content-Length:";
-    const char *transfer_encoding_str = "Transfer-Encoding: chunked";
+    if (msg == NULL || msg->header == NULL) { return; }
 
     char *header = msg->header;
-    char *content_length_start = strcasestr(header, content_length_str); // Case-insensitive search for Content-Length
 
-    if (content_length_start) {
+    // Case-insensitive search for Content-Length
+    const char *content_length_str = "Content-Length:";
+    char *content_length_start = strcasestr(header, content_length_str); 
+
+    if (content_length_start != NULL) {
         msg->original_content_type = NORMAL_ENCODING;
 
         // Extract the content length value
@@ -173,6 +174,7 @@ void modify_content_type(incomplete_message *msg) {
         while (*content_length_value == ' ') {
             content_length_value++;
         }
+
         msg->content_length = atoi(content_length_value);
 
         // Find the end of the Content-Length line
@@ -187,9 +189,11 @@ void modify_content_type(incomplete_message *msg) {
         }
     }
 
-    // Check if Transfer-Encoding: chunked already exists
+    // Case insensitive search for Transfer-Encoding: chunked 
+    const char *transfer_encoding_str = "Transfer-Encoding: chunked";
     char *transfer_encoding_start = strcasestr(header, transfer_encoding_str);
-    if (transfer_encoding_start) {
+
+    if (transfer_encoding_start != NULL) {
         msg->original_content_type = CHUNKED_ENCODING;
     }
 
@@ -296,6 +300,7 @@ char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
     const char *body_tag = "</body>";
 
     if (strstr(buffer, quora_last_line) == NULL || strstr(buffer, body_tag) == NULL) {
+        printf("Didn't find a place to inject\n");
         return buffer;
     }
 

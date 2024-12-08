@@ -10,6 +10,7 @@ char *convert_to_chunked_encoding(char *buffer, int buffer_length,
 
 bool contains_chunk_end(char *buffer, int buffer_length);
 
+
 incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, 
     int filedes, Node **all_messages);
 
