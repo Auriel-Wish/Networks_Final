@@ -309,16 +309,16 @@ bool handle_fact_check_request(char *buffer, incomplete_message *curr_message,
 
 bool handle_general_client_request(incomplete_message *curr_message, int read_n, 
     Context_T *curr_context, Node **all_messages, char *buffer) {
-        // If the message is a regular client request
+    // If the message is a regular client request
+
     int write_n = 0;
     curr_message->content_length_read += read_n;
+
+    // sending header
     if (!(curr_message->header_sent) && curr_message->header_complete) {
-        int header_length = strlen(curr_message->header);
 
-        // printf("Writing message header to server...");
-        write_n = SSL_write(curr_context->server_ssl, curr_message->header, header_length);
-        // printf("COMPLETE\n");
-
+        write_n = SSL_write(curr_context->server_ssl, curr_message->header, 
+            curr_message->original_header_length);
 
         if (write_n <= 0) {
             free(curr_message->header);
@@ -327,21 +327,30 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         }
 
         // printf("Wrote header to server: %s\n", curr_message->header);
+        char *end_of_header = strstr(buffer, "\r\n\r\n");
+        int curr_part_of_header_length = end_of_header - buffer + 4;
 
         curr_message->header_sent = true;
         curr_message->content_length_read -= curr_message->original_header_length;
-        buffer += curr_message->original_header_length;
-        read_n -= curr_message->original_header_length;
+        buffer += curr_part_of_header_length;
+        read_n -= curr_part_of_header_length;
+
+        // curr_message->header_sent = true;
+        // curr_message->content_length_read -= curr_message->original_header_length;
+        // buffer += curr_message->original_header_length;
+        // read_n -= curr_message->original_header_length;
     }
 
+    // NOTE: potential bug: we're concerned that for HTTP requests which contain
+    // only a header and no body, that after we read in the header and see that
+    // there is no body to be read, we will have an open socket that will never
+    // have data sent to it again, that will just remain open.
 
-    if (read_n > 0) {
+    // sending body
+    if (read_n > 0 && curr_message->header_sent) {
         if (curr_message->original_content_type != NORMAL_ENCODING) {
 
-            // printf("Writing normal message  contetn to client...");
             write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
-            // printf("COMPLETE\n");
-
 
             if (write_n <= 0) {
                 free(curr_message->header);
@@ -356,13 +365,7 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         }
 
         else {
-            int chunk_data_length = 0;
-            char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
-            if (chunked_data == NULL) {
-                return false;
-            }
-
-            write_n = SSL_write(curr_context->server_ssl, chunked_data, chunk_data_length);
+            write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
             if (write_n <= 0) {
                 free(curr_message->header);
@@ -370,7 +373,14 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
                 return false;
             }
 
-            if (curr_message->content_length_read >= curr_message->content_length) {
+            if (curr_message->original_content_type == CHUNKED_ENCODING) {
+                if (contains_chunk_end(buffer, read_n)) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                }
+            } else if (curr_message->original_content_type == NORMAL_ENCODING 
+                       && curr_message->content_length_read >= curr_message->content_length) {
+                free(curr_message->header);
                 removeNode(all_messages, curr_message);
             }
         }
@@ -380,9 +390,8 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
 }
 
 bool read_client_request(int client_fd, Node **ssl_contexts, 
-    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache, Node **all_messages, int LLM_sockfd, struct sockaddr_un python_addr) {
+    fd_set *active_read_fd_set, int *max_fd, Node **all_messages, int LLM_sockfd, struct sockaddr_un python_addr) {
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, client_fd);
-    (void)cache;
     
     if (curr_context == NULL) {
         /* No SSL Context associated with this file descriptor 
@@ -416,8 +425,10 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
             incomplete_message *curr_message = 
                 get_incomplete_message_by_filedes(*all_messages, 
                     curr_context->client_fd);
-            curr_message = modify_header_data(&curr_message, buffer, 
-                curr_context->client_fd, all_messages);
+
+            if (curr_message == NULL || !(curr_message->header_complete)) {
+                curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
+            }
 
             // Step 3: See if the message is a fact-check request from the 
             // client, or a different request
@@ -463,13 +474,17 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
     else { //if (read_n > 0)
         incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
-        curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);            
+        if (curr_message == NULL || !(curr_message->header_complete)) {
+            curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);
+        }
 
         curr_message->content_length_read += read_n;
         
         // If the response header hasn't been sent to the client yet, send it
         if (!(curr_message->header_sent) && curr_message->header_complete) {
             int header_length = strlen(curr_message->header);
+            printf("Header length %d\n", header_length);
+            printf("In the struct is %d\n", curr_message->original_header_length);
             write_n = SSL_write(curr_context->client_ssl, curr_message->header, header_length);
 
             if (write_n <= 0) {

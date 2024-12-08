@@ -56,6 +56,7 @@ int main(int argc, char **argv)
     int parentfd = setup_tcp_server_socket(portno);
 
     struct sockaddr_un python_addr;
+
     // socklen_t python_addr_len;
     int LLM_sockfd = initialize_LLM_communication(&python_addr);
 
@@ -63,8 +64,6 @@ int main(int argc, char **argv)
 
     Node *ssl_contexts = NULL;
 
-    Cache_T *cache = create_cache(20); // setting capacity to be small for now
-    (void)cache;
 
     /* Initialize the set of active sockets */
     FD_ZERO(&active_read_fd_set);
@@ -129,16 +128,6 @@ int main(int argc, char **argv)
                     set_max_fd(new_fd, &max_fd);
                 }
 
-                // else {
-                //     // connection request on other socket
-                //     int msg_src = client_or_server_fd(ssl_contexts, i);
-                //     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
-                //         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
-                //     }
-
-
-                // }
-
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
                     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
@@ -146,7 +135,7 @@ int main(int argc, char **argv)
                 } 
                 
                 else {
-                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, NULL, &all_messages, LLM_sockfd, python_addr)) {
+                    if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, &all_messages, LLM_sockfd, python_addr)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 }
@@ -180,10 +169,6 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
 
     FD_CLR(curr_context->client_fd, active_read_fd_set);
     FD_CLR(curr_context->server_fd, active_read_fd_set);
-
-    // NOTE: switching to SSL_quiet_shutdown
-    // SSL_shutdown(curr_context->client_ssl);
-    // SSL_shutdown(curr_context->server_ssl);
 
     SSL_set_quiet_shutdown(curr_context->client_ssl, 1);
     SSL_free(curr_context->client_ssl);

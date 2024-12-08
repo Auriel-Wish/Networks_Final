@@ -2,7 +2,6 @@
 #define DISPATCH_H
 #include "linked_list.h"
 #include "processing.h"
-#include "cache.h"
 
 #define BUFFER_SIZE 65536 //64KB
 
@@ -23,8 +22,8 @@
 void set_socket_timeout(int fd, long timeout_milliseconds);
 
 bool read_client_request(int client_fd, Node **ssl_contexts, 
-    fd_set *active_read_fd_set, int *max_fd, Cache_T *cache, 
-    Node **all_messages, int LLM_sockfd, struct sockaddr_un python_addr);
+    fd_set *active_read_fd_set, int *max_fd, Node **all_messages, 
+    int LLM_sockfd, struct sockaddr_un python_addr);
 
 int client_or_server_fd(Node *ssl_contexts, int fd);
 
