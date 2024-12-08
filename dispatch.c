@@ -511,10 +511,83 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         }
 
         // If there are more bytes to be sent in the response
-        if (read_n > 0) {
+        if (read_n > 0 && curr_message->header_sent) {
 
-            // Weird encoding???
-            if (curr_message->original_content_type != NORMAL_ENCODING) {
+            // Normal encoding (with content length)
+            if (curr_message->original_content_type == NORMAL_ENCODING) {
+               int chunk_data_length = 0;
+                char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
+
+                if (chunked_data == NULL) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                    return false;
+                }
+
+                // // Injection
+                // int to_send_length = chunk_data_length;
+                // char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
+
+                // // printf("Injection with chunked encoding...");
+                // write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
+                // printf("COMPLETE\n");
+                
+                // No injection
+                write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
+                free(chunked_data);
+                chunked_data = NULL;
+
+                if (write_n <= 0) {
+                    int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
+                    if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+                        return true; // Keep the connection open
+                    } else {
+                        free(curr_message->header);
+                        removeNode(all_messages, curr_message);
+                        return false;
+                    }
+                }
+
+                if (curr_message->content_length_read >= curr_message->content_length) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                }
+            }
+
+            else {
+                // NOTE: known bug here in this function when curling quora.
+                // things don't work the way I expect
+                int new_buffer_length = 0;
+                char *new_buffer = process_chunked_data(curr_message, buffer, &read_n, &new_buffer_length);
+
+                // no injection
+                write_n = SSL_write(curr_context->client_ssl, new_buffer, new_buffer_length);
+
+                if (write_n <= 0) {
+                    int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
+                    if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+                        free(new_buffer);
+                        new_buffer = NULL;
+
+                        return true; // Keep the connection open
+                    } else {
+                        free(curr_message->header);
+                        removeNode(all_messages, curr_message);
+                        free(new_buffer);
+                        new_buffer = NULL;
+
+                        return false;
+                    }
+                }
+
+                if (contains_chunk_end(new_buffer, new_buffer_length)) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                }
+
+                free(new_buffer);
+                new_buffer = NULL;
+
                 // printf("original_content_type: %d\n", curr_message->original_content_type);
                 
                 // TODO: Only try to do injection if we're at quora
@@ -528,53 +601,18 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 // printf("COMPLETE\n");
 
                 // No injection
-                write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
+                // write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
 
-                if (write_n <= 0) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                    return false;
-                }
+                // if (write_n <= 0) {
+                //     free(curr_message->header);
+                //     removeNode(all_messages, curr_message);
+                //     return false;
+                // }
 
-                if (contains_chunk_end(buffer, read_n)) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                }
-            }
-
-            else { // content_type == NORMAL_ENCODING
-
-                int chunk_data_length = 0;
-                char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
-
-                if (chunked_data == NULL) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                    return false;
-                }
-
-                // // TODO: only try to do injection if we're at quora
-                // // Injection
-                // int to_send_length = chunk_data_length;
-                // char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
-
-                // // printf("Injection with chunked encoding...");
-                // write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-                // printf("COMPLETE\n");
-                
-                // No injection
-                write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
-                
-                if (write_n <= 0) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                    return false;
-                }
-
-                if (curr_message->content_length_read >= curr_message->content_length) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                }
+                // if (contains_chunk_end(buffer, read_n)) {
+                //     free(curr_message->header);
+                //     removeNode(all_messages, curr_message);
+                // }
             }
 
 

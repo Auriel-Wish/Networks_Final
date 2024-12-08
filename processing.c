@@ -664,15 +664,18 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_si
     char *new_buffer = NULL;
     int new_buffer_capacity = 0;
     int new_buffer_length = 0;
+
     int pos = 0;          // Current position in the buffer
     int start = 0;        // Start position for data to be added
     bool done = false;    // Flag to indicate completion (e.g., encountered 0\r\n\r\n)
+
     while (pos < *buffer_size && !done) {
         // Search for the next occurrence of "\r\n"
         char *crlf = memchr(buffer + pos, '\r', *buffer_size - pos);
         if (crlf && (crlf - buffer + 1) < *buffer_size && *(crlf + 1) == '\n') {
             int crlf_pos = crlf - buffer;
             int line_length = crlf_pos - pos;
+
             if (msg->rn_state == END_OF_CHUNK) {
                 // Currently expecting a chunk size line
                 // Extract the chunk size
@@ -680,18 +683,22 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_si
                 int copy_length = (line_length < (int)(sizeof(chunk_size_str) - 1)) ? line_length : (int)(sizeof(chunk_size_str) - 1);
                 memcpy(chunk_size_str, buffer + pos, copy_length);
                 chunk_size_str[copy_length] = '\0';
+
                 // Convert hex string to integer
                 int chunk_size = (int)strtol(chunk_size_str, NULL, 16);
-                
+
                 if (chunk_size == 0) {
                     // Edge case: 0\r\n\r\n indicates the end of chunks
                     done = true;
                 }
+
                 // Update state to END_OF_HEADER
                 msg->rn_state = END_OF_HEADER;
+
                 // Move position past "\r\n"
                 pos = crlf_pos + 2;
                 start = pos;
+
                 // If chunk size is zero, break after processing
                 if (chunk_size == 0) {
                     break;
@@ -701,8 +708,10 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_si
                 // Calculate the expected end of chunk data
                 int data_end = crlf_pos;
                 int data_length = data_end - start;
+
                 // Ensure the chunk size matches the expected data length
                 // (Optional: Add validation if necessary)
+
                 // Allocate or expand new_buffer to hold the data
                 if (new_buffer_length + data_length > new_buffer_capacity) {
                     // Increase capacity (e.g., double the size or set to required size)
@@ -715,11 +724,14 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_si
                     }
                     new_buffer = temp;
                 }
+
                 // Append the chunk data to new_buffer
                 memcpy(new_buffer + new_buffer_length, buffer + start, data_length);
                 new_buffer_length += data_length;
+
                 // Update state to END_OF_CHUNK
                 msg->rn_state = END_OF_CHUNK;
+
                 // Move position past "\r\n"
                 pos = crlf_pos + 2;
                 start = pos;
@@ -734,6 +746,7 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_si
             } else if (msg->rn_state == END_OF_HEADER) {
                 // Incomplete chunk data, append whatever is available
                 int data_length = *buffer_size - start;
+
                 // Allocate or expand new_buffer to hold the data
                 if (new_buffer_length + data_length > new_buffer_capacity) {
                     // Increase capacity
@@ -746,15 +759,18 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_si
                     }
                     new_buffer = temp;
                 }
+
                 // Append the available chunk data to new_buffer
                 memcpy(new_buffer + new_buffer_length, buffer + start, data_length);
                 new_buffer_length += data_length;
+
                 // Update position
                 pos = *buffer_size;
                 start = pos;
             }
         }
     }
+
     // After processing all chunks, prepend a single chunk header to new_buffer
     // Convert new_buffer_length to hexadecimal string
     char final_chunk_header[32];
@@ -764,6 +780,7 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_si
         free(new_buffer);
         return NULL;
     }
+
     // Calculate total size: header + data + final "\r\n"
     int total_size = header_length + new_buffer_length + 2;
     char *final_buffer = malloc(total_size);
@@ -772,32 +789,41 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_si
         free(new_buffer);
         return NULL;
     }
+
     // Copy the header
     memcpy(final_buffer, final_chunk_header, header_length);
+
     // Copy the data
     memcpy(final_buffer + header_length, new_buffer, new_buffer_length);
+
     // Append the final "\r\n"
     final_buffer[header_length + new_buffer_length] = '\r';
     final_buffer[header_length + new_buffer_length + 1] = '\n';
+
     // Free the intermediate new_buffer
     free(new_buffer);
+
     // Handle the edge case where the original buffer contained "0\r\n\r\n"
     if (done) {
         // Allocate space for "0\r\n\r\n"
         char *end_chunk = "0\r\n\r\n";
         int end_chunk_length = 5;
+
         // Reallocate final_buffer to append "0\r\n\r\n"
         final_buffer = realloc(final_buffer, total_size + end_chunk_length);
         if (!final_buffer) {
             // Allocation failed
             return NULL;
         }
+
         // Append "0\r\n\r\n" to indicate the end of chunks
         memcpy(final_buffer + total_size, end_chunk, end_chunk_length);
         total_size += end_chunk_length;
     }
+
     // Set the output size
     *output_size = total_size;
+
     return final_buffer;
 }
 
