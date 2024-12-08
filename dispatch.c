@@ -20,24 +20,6 @@
 #define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
 #define CHUNK 16384
 
-void set_socket_timeout(int fd, long timeout_milliseconds) {
-    struct timeval timeout;
-    timeout.tv_sec = timeout_milliseconds / 1000;               // Whole seconds
-    timeout.tv_usec = (timeout_milliseconds % 1000) * 1000;     // Remaining microseconds
-
-    // Set receive timeout
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Failed to set receive timeout");
-        fprintf(stderr, "setsockopt failed: %s\n", strerror(errno));
-    }
-
-    // Set send timeout
-    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Failed to set send timeout");
-        fprintf(stderr, "setsockopt failed: %s\n", strerror(errno));
-    }
-}
-
 SSL_CTX *create_ssl_context() {
     const SSL_METHOD *method = TLS_server_method(); // Use the TLS server method
     SSL_CTX *ctx = SSL_CTX_new(method);
@@ -235,6 +217,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
         char *hostname = strtok(buffer + 8, ":");
 
         // set_socket_timeout(fd, 200);
+
         int flags = fcntl(fd, F_GETFL, 0); // Get the current file descriptor flags
         if (flags == -1) {
             perror("fcntl F_GETFL");
@@ -330,7 +313,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         int read_n, write_n;
 
         read_n = SSL_read(curr_context->client_ssl, buffer, BUFFER_SIZE);
-        printf("Read %d bytes from client\n", read_n);
+        // printf("Read %d bytes from client\n", read_n);
         
         if (read_n > 0) {
             incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->client_fd);
@@ -414,13 +397,13 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                 }
 
                 if (read_n > 0 && curr_message->header_sent) {
-                        write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
+                    write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
-                        if (write_n <= 0) {
-                            free(curr_message->header);
-                            removeNode(all_messages, curr_message);
-                            return false;
-                        }
+                    if (write_n <= 0) {
+                        free(curr_message->header);
+                        removeNode(all_messages, curr_message);
+                        return false;
+                    }
                     if (curr_message->original_content_type == CHUNKED_ENCODING) {
                         if (contains_chunk_end(buffer, read_n)) {
                             free(curr_message->header);
