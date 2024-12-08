@@ -5,8 +5,11 @@
 
 void generate_certificates(const char *hostname);
 
-char *convert_to_chunked_encoding(char *buffer, int buffer_length, 
+char *convert_normal_to_chunked_encoding(char *buffer, int buffer_length, 
     incomplete_message *msg, int *chunked_data_length);
+
+// char *convert_to_chunked_encoding(char *buffer, int buffer_length, 
+//     incomplete_message *msg, int *chunked_data_length);
 
 bool contains_chunk_end(char *buffer, int buffer_length);
 
@@ -20,9 +23,13 @@ void modify_accept_encoding(incomplete_message *curr_message);
 
 char *inject_script_into_chunked_html(char *buffer, int *buffer_length);
 
+char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_size, int *output_size);
+
 char *get_content_length_ptr(char *str);
 
 void print_buffer(unsigned char *m, unsigned size);
+
+bool is_request(char *buffer);
 
 #endif
 

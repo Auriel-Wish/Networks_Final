@@ -357,7 +357,7 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
 
         else {
             int chunk_data_length = 0;
-            char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
+            char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
             if (chunked_data == NULL) {
                 return false;
             }
@@ -520,7 +520,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             else { // content_type == NORMAL_ENCODING
 
                 int chunk_data_length = 0;
-                char *chunked_data = convert_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
+                char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
 
                 if (chunked_data == NULL) {
                     free(curr_message->header);

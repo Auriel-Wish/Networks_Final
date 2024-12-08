@@ -30,6 +30,10 @@ typedef struct {
         CHUNKED_ENCODING,
         OTHER_ENCODING
     } original_content_type;
+    enum {
+        END_OF_HEADER,
+        END_OF_CHUNK
+    } rn_state;
     char *header;
     int original_header_length;
     bool header_sent;
