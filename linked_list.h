@@ -37,6 +37,7 @@ typedef struct {
     char *header;
     int original_header_length;
     bool header_sent;
+    bool read_ended_with_slash_r;
 } incomplete_message;
 
 void append(Node **head, void *data);
