@@ -457,9 +457,10 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         // printf("Getting ready to search quora\n");
     }
 
-    char buffer_arr[BUFFER_SIZE];
+    char buffer_arr[BUFFER_SIZE + 1];
     char *buffer = buffer_arr;
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
+    buffer[read_n] = '\0';
 
     int write_n;
 
@@ -543,6 +544,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 
                 // No injection
                 write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
+
                 free(chunked_data);
                 chunked_data = NULL;
 
@@ -565,17 +567,43 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     removeNode(all_messages, curr_message);
                 }
             }
-
             else {
                 // NOTE: known bug here in this function when curling quora.
                 // things don't work the way I expect
                 int new_buffer_length = 0;
-                char *new_buffer = process_chunked_data(curr_message, buffer, &read_n, &new_buffer_length);
+
+                // printf("\n\n\nBEFORE PROCESSING\n");
+                // printf("read_n: %X\n", read_n);
+                // for (int i = 0; i < read_n; i++) {
+                //     if (buffer[i] == '\r') {
+                //         printf("\nSLASH R\n");
+                //     }
+                //     else if (buffer[i] == '\n') {
+                //         printf("\nSLASH N\n");
+                //     } else {
+                //         printf("%c", buffer[i]);
+                //     }
+                // }
+                char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
+                // printf("\n\n\nAFTER PROCESSING 222\n");
+                // printf("new_buffer_length: %X\n", new_buffer_length);
+                // for (int i = 0; i < new_buffer_length; i++) {
+                //     if (new_buffer[i] == '\r') {
+                //         printf("\nSLASH R\n");
+                //     }
+                //     else if (new_buffer[i] == '\n') {
+                //         printf("\nSLASH N\n");
+                //     } else {
+                //         printf("%c", new_buffer[i]);
+                //     }
+                // }
+
 
                 // no injection
                 write_n = SSL_write(curr_context->client_ssl, new_buffer, new_buffer_length);
 
                 if (write_n <= 0) {
+                    // if we just get rid of this data, won't that data just be lost?
                     int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
                     if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                         free(new_buffer);
@@ -612,8 +640,15 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 //     return false;
 
                 // }
+                // printf("\n\n");
+                // for (int i = 0; i < new_buffer_length; i++) {
+                //     printf("%c", new_buffer[i]);
+                // }
+                // printf("\n\n");
 
+                // printf("freeing new buffer\n");
                 free(new_buffer);
+                // printf("freed new buffer\n");
                 new_buffer = NULL;
 
                 // printf("original_content_type: %d\n", curr_message->original_content_type);

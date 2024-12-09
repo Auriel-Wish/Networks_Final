@@ -23,7 +23,11 @@ void modify_accept_encoding(incomplete_message *curr_message);
 
 char *inject_script_into_chunked_html(char *buffer, int *buffer_length);
 
-char* process_chunked_data(incomplete_message *msg, char *buffer, int *buffer_size, int *output_size);
+char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_size, int *output_buffer_size);
+
+char *add_end_of_message_chunk(char *buffer, int *buffer_length);
+
+char *make_chunk_header_and_end(char *buffer_only_data, int *data_length);
 
 char *get_content_length_ptr(char *str);
 
