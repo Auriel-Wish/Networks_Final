@@ -133,7 +133,6 @@ int main(int argc, char **argv)
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);
                     }
                 } 
-                
                 else {
                     if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, &all_messages, LLM_sockfd, python_addr)) {
                         client_disconnect(i, &ssl_contexts, &active_read_fd_set);

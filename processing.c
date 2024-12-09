@@ -869,16 +869,16 @@ char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
     chunked_data[chunk_header_len + *data_length + 1] = '\n';
     chunked_data[chunk_header_len + *data_length + 2] = '\0';
 
-    if (contains_chunk_end(chunked_data, chunk_header_len + *data_length + 2)) {
-        printf("\n3 BUFFER CONTAINS END OF MESSAGE\n");
-        printf("chunked_data[chunk_header_len + *data_length - 3]: %d\n", chunked_data[chunk_header_len + *data_length - 3]);
-    printf("chunked_data[chunk_header_len + *data_length - 2]: %d\n", chunked_data[chunk_header_len + *data_length - 2]);
-    printf("chunked_data[chunk_header_len + *data_length - 1]: %d\n", chunked_data[chunk_header_len + *data_length - 1]);
-    printf("chunked_data[chunk_header_len + *data_length]: %d\n", chunked_data[chunk_header_len + *data_length - 0]);
-    printf("chunked_data[chunk_header_len + *data_length + 1]: %d\n", chunked_data[chunk_header_len + *data_length + 1]);
-    printf("chunked_data[chunk_header_len + *data_length + 2]: %d\n", chunked_data[chunk_header_len + *data_length + 2]);
+    // if (contains_chunk_end(chunked_data, chunk_header_len + *data_length + 2)) {
+    //     printf("\n3 BUFFER CONTAINS END OF MESSAGE\n");
+    //     printf("chunked_data[chunk_header_len + *data_length - 3]: %d\n", chunked_data[chunk_header_len + *data_length - 3]);
+    // printf("chunked_data[chunk_header_len + *data_length - 2]: %d\n", chunked_data[chunk_header_len + *data_length - 2]);
+    // printf("chunked_data[chunk_header_len + *data_length - 1]: %d\n", chunked_data[chunk_header_len + *data_length - 1]);
+    // printf("chunked_data[chunk_header_len + *data_length]: %d\n", chunked_data[chunk_header_len + *data_length - 0]);
+    // printf("chunked_data[chunk_header_len + *data_length + 1]: %d\n", chunked_data[chunk_header_len + *data_length + 1]);
+    // printf("chunked_data[chunk_header_len + *data_length + 2]: %d\n", chunked_data[chunk_header_len + *data_length + 2]);
 
-    }
+    // }
 
     
     // Update data length to include header and \r\n
@@ -939,29 +939,6 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
     char *last_rn_ptr = buffer;
     bool done = false;
 
-// printf("\n\n\nBUFFER SIZE: %d\n", buffer_size);
-// // printf("rn_state: %d\n", msg->rn_state);
-// if (msg->rn_state == END_OF_CHUNK) {
-//     printf("END OF CHUNK\n");
-// }
-// else if (msg->rn_state == END_OF_HEADER) {
-//     printf("END OF HEADER\n");
-// }
-//         // for (int i = 0; i < buffer_size; i++) {
-//         //     if (buffer[i] == '\r') {
-//         //         printf("\nslash r\n");
-//         //     }
-//         //     else if (buffer[i] == '\n') {
-//         //         printf("\nslash n\n");
-//         //     }
-//         //     else if (buffer[i] == '\0') {
-//         //         printf("\nnull terminator\n");
-//         //     }
-//         //     else {
-//         //         printf("%d", buffer[i]);
-//         //     }
-//         // }
-
     while (last_rn_ptr != NULL) {
         if (rn_ptr == NULL) {
             done = true;
@@ -976,22 +953,18 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
         else if (msg->rn_state == END_OF_HEADER) {
             int curr_chunk_size = rn_ptr - last_rn_ptr;
 
-            // if (curr_chunk_size > 0) {
-                // place data in new buffer
-                if (new_buffer == NULL) {
-                    new_buffer = malloc(curr_chunk_size);
-                    memcpy(new_buffer, last_rn_ptr, curr_chunk_size);
-                }
-                // if new buffer is already allocated, realloc and copy data
-                else {
-                    new_buffer = realloc(new_buffer, *output_buffer_size + curr_chunk_size);
-                    memcpy(new_buffer + *output_buffer_size, last_rn_ptr, curr_chunk_size);
-                }
+            // place data in new buffer
+            if (new_buffer == NULL) {
+                new_buffer = malloc(curr_chunk_size);
+                memcpy(new_buffer, last_rn_ptr, curr_chunk_size);
+            }
+            // if new buffer is already allocated, realloc and copy data
+            else {
+                new_buffer = realloc(new_buffer, *output_buffer_size + curr_chunk_size);
+                memcpy(new_buffer + *output_buffer_size, last_rn_ptr, curr_chunk_size);
+            }
 
-                // printf("output_buffer_size before: %X\n", *output_buffer_size);
-                *output_buffer_size += curr_chunk_size;
-                // printf("output_buffer_size after: %X\n", *output_buffer_size);
-            // }
+            *output_buffer_size += curr_chunk_size;
 
             msg->rn_state = END_OF_CHUNK;
         }
@@ -1020,15 +993,6 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
         last_rn_ptr = rn_ptr + 2;
         rn_ptr = find_next_rn(last_rn_ptr, buffer + buffer_size - last_rn_ptr);
     }
-
-    // if (new_buffer[*output_buffer_size - 1] == '\n' && new_buffer[*output_buffer_size - 2] == '\r') {
-    //     printf("\nnew buffer contains end of message\n");
-    // }
-    // printf("output_buffer_size: %d\n", *output_buffer_size);
-    // if (*output_buffer_size > 1) {
-    //     printf("new_buffer[*output_buffer_size - 1]: %d\n", new_buffer[*output_buffer_size - 1]);
-    //     printf("new_buffer[*output_buffer_size - 2]: %d\n", new_buffer[*output_buffer_size - 2]);
-    // }
 
     char *to_send = NULL;
     if (new_buffer != NULL) {

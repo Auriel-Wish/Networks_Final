@@ -10,7 +10,8 @@ tmp/
 spec.pdf
 LLM_test
 venv
-out.txt
 config.json
 /checker
 *.txt
+*.html
+*.log

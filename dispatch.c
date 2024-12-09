@@ -508,7 +508,18 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             if (!(curr_message->header_sent) && curr_message->header_complete) {
                 // printf("Header length %d\n", header_length);
                 // printf("In the struct is %d\n", curr_message->original_header_length);
-                // printf("About to send the HEADER to client\n\n");
+                printf("About to send the HEADER to client\n\n");
+                printf("length of header: %d\n", strlen(curr_message->header));
+                // printf("%s\n", curr_message->header);
+                for (int i = 0; i < strlen(curr_message->header); i++) {
+                    if (curr_message->header[i] == '\r') {
+                        printf("\nR\n");
+                    } else if (curr_message->header[i] == '\n') {
+                        printf("\nN\n");
+                    } else {
+                        printf("%c", curr_message->header[i]);
+                    }
+                }
 
                 //maybe we put this in the struct when we clean up
                 int changed_header_len = strlen(curr_message->header);
@@ -596,11 +607,24 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     // no injection
                     // write_n = SSL_write(curr_context->client_ssl, new_buffer, new_buffer_length);
 
+                    // printf("Before Injection\n%s\n", new_buffer);
+
                     // injection
                     int to_send_length = new_buffer_length;
                     char *to_send = inject_script_into_chunked_html(new_buffer, &to_send_length);
 
                     write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
+                    // printf("to_send_length: %d\n", to_send_length);
+                    // printf("wrote:\n");
+                    // for (int i = 0; i < to_send_length; i++) {
+                    //     if (to_send[i] == '\r') {
+                    //         printf("R");
+                    //     } else if (to_send[i] == '\n') {
+                    //         printf("N");
+                    //     } else {
+                    //         printf("%c", to_send[i]);
+                    //     }
+                    // }
                     // printf("COMPLETE\n");
 
                     if (write_n <= 0) {
@@ -624,63 +648,15 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     }
 
                     if (contains_chunk_end(new_buffer, new_buffer_length)) {
-                        // printf("\nremove node 6\n");
-                        // printf("\n\n\nNew buffer is:\n %s\n\n\n", new_buffer);
-                        
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
 
                     }
-                    // if (contains_chunk_end(buffer, read_n)) {
-                    //     printf("\nremove node 6\n");
-                    //     // printf("\n\n\nNew buffer is:\n %s\n\n\n", new_buffer);
-                        
-                    //     free(curr_message->header);
-                    //     removeNode(all_messages, curr_message);
-                    //     return false;
 
-                    // }
-                    // printf("\n\n");
-                    // for (int i = 0; i < new_buffer_length; i++) {
-                    //     printf("%c", new_buffer[i]);
-                    // }
-                    // printf("\n\n");
-
-                    // printf("freeing new buffer\n");
                     free(new_buffer);
-                    // printf("freed new buffer\n");
                     new_buffer = NULL;
-
-                    // printf("original_content_type: %d\n", curr_message->original_content_type);
-                    
-                    // TODO: Only try to do injection if we're at quora
-                    // Injection
-                    // int to_send_length = read_n;
-                    // char *to_send = inject_script_into_chunked_html(buffer, &to_send_length);
-
-                    // // maybe the injection could be the issue?
-                    // // printf("Injection with normal encoding...");
-                    // write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-                    // printf("COMPLETE\n");
-
-                    // No injection
-                    // write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
-
-                    // if (write_n <= 0) {
-                    //     free(curr_message->header);
-                    //     removeNode(all_messages, curr_message);
-                    //     return false;
-                    // }
-
-                    // if (contains_chunk_end(buffer, read_n)) {
-                    //     free(curr_message->header);
-                    //     removeNode(all_messages, curr_message);
-                    // }
-
                 }
-
-
             }
 
             return true;
