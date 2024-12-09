@@ -37,5 +37,7 @@ bool is_request(char *buffer);
 
 bool request_might_have_data(const char *method);
 
+bool is_quora(char *hostname);
+
 #endif
 

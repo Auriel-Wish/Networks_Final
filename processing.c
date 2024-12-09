@@ -123,7 +123,7 @@ bool contains_chunk_end(char *buffer, int buffer_length) {
 incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, int filedes, Node **all_messages) {
     incomplete_message *curr_message = *msg;
     if (curr_message == NULL) {
-        // printf("\nMAKING NEW MESSAGE\n");
+        printf("\nMAKING NEW MESSAGE\n");
         curr_message = malloc(sizeof(incomplete_message));
         assert(curr_message != NULL);
         curr_message->filedes = filedes;
@@ -140,24 +140,24 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
     }
 
     else {
-        // printf("\nNOT NEW MESSAGE\n");
+        printf("\nNOT NEW MESSAGE\n");
     }
 
     if (!(curr_message->header_complete)) {
 
-        int buffer_length = strlen(buffer);
-        if (buffer_length < 4) {
-            printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
-        }
-        else {
-            if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
-                printf("\nFOUND NEWLINE\n");
-            }
-            if (buffer[buffer_length - 1] == '\r') {
-                printf("\nFOUND CARRIAGE RETURN\n");
-            }
-        }
-
+        // int buffer_length = strlen(buffer);
+        // if (buffer_length < 4) {
+        //     printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
+        // }
+        // else {
+        //     if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
+        //         printf("\nFOUND NEWLINE\n");
+        //     }
+        //     if (buffer[buffer_length - 1] == '\r') {
+        //         printf("\nFOUND CARRIAGE RETURN\n");
+        //     }
+        // }
+        // printf("\nBUFFER:\n%s\n", buffer);
 
         char *header_end = strstr(buffer, "\r\n\r\n");
         char *only_header = NULL;
@@ -169,7 +169,7 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
             only_header[only_header_size] = '\0';
         }
         else {
-            printf("\nELSE CASE\n");
+            // printf("\nELSE CASE\n");
             only_header = malloc(strlen(buffer) + 1);
             strcpy(only_header, buffer);
         }
@@ -191,11 +191,17 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
         else {
             modify_content_type(curr_message);
         }
+
+        printf("Header is currently:\n%s\n\n", curr_message->header);
     }
 
     // printf("Header is:\n %s\n\n", curr_message->header);
 
     return curr_message;
+}
+
+bool is_quora(char *hostname) {
+    return (strcmp(hostname, "www.quora.com") == 0);
 }
 
 void modify_content_type(incomplete_message *msg) {
@@ -336,6 +342,9 @@ void modify_accept_encoding(incomplete_message *curr_message) {
 }
 
 char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
+    return buffer;
+
+    
     char *quora_last_line = "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})})},100)})";
     const char *body_tag = "</body>";
 

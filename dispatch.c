@@ -421,11 +421,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         }
         
         else { // if (read_n > 0)
-            bool at_quora = (strstr(curr_context->hostname, "quora") != NULL);
-
-        // printf("Hostname: %s\n", curr_context->hostname);
-
-            if (at_quora) {
+            if (is_quora(curr_context->hostname)) {
                 // Step 2: Get any incomplete message already associated with that client
                 incomplete_message *curr_message = 
                     get_incomplete_message_by_filedes(*all_messages, 
@@ -487,10 +483,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     }
 
     else { //if (read_n > 0)
-        // printf("Trying to get data from hostname: %s\n", curr_context->hostname);
-        bool at_quora = (strstr(curr_context->hostname, "quora") != NULL);
-
-        if (at_quora) {
+        if (is_quora(curr_context->hostname)) {
             // printf("QUORA SERVER\n");
             // printf("Getting ready to search quora\n");
             incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
