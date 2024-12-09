@@ -335,10 +335,10 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         buffer += curr_part_of_header_length;
         read_n -= curr_part_of_header_length;
 
-        // curr_message->header_sent = true;
-        // curr_message->content_length_read -= curr_message->original_header_length;
-        // buffer += curr_message->original_header_length;
-        // read_n -= curr_message->original_header_length;
+        if (!request_might_have_data(curr_message->header)) {
+            free(curr_message->header);
+            removeNode(all_messages, curr_message);
+        }
     }
 
     // NOTE: potential bug: we're concerned that for HTTP requests which contain
@@ -426,7 +426,6 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
         // printf("Hostname: %s\n", curr_context->hostname);
 
             if (at_quora) {
-                printf("QUORA REQ FROM CLIENT\n");
                 // Step 2: Get any incomplete message already associated with that client
                 incomplete_message *curr_message = 
                     get_incomplete_message_by_filedes(*all_messages, 
@@ -491,7 +490,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         bool at_quora = (strstr(curr_context->hostname, "quora") != NULL);
 
         if (at_quora) {
-            printf("QUORA SERVER\n");
+            // printf("QUORA SERVER\n");
             // printf("Getting ready to search quora\n");
             incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
             if (curr_message == NULL || !(curr_message->header_complete)) {
@@ -625,7 +624,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     }
 
                     if (contains_chunk_end(new_buffer, new_buffer_length)) {
-                        printf("\nremove node 6\n");
+                        // printf("\nremove node 6\n");
                         // printf("\n\n\nNew buffer is:\n %s\n\n\n", new_buffer);
                         
                         free(curr_message->header);

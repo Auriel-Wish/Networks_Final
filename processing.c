@@ -78,7 +78,8 @@ char *convert_normal_to_chunked_encoding(char *buffer, int buffer_length, incomp
         int chunk_size = remaining;
 
         // Write the chunk size in hexadecimal, followed by \r\n
-        int header_length = sprintf(output_ptr, "%x\r\n", chunk_size);
+        // int header_length = sprintf(output_ptr, "%x\r\n", chunk_size);
+        int header_length = snprintf(output_ptr, max_output_size, "%x\r\n", chunk_size);
 
         output_ptr += header_length;
 
@@ -789,9 +790,42 @@ bool is_request(char *buffer) {
     if (buffer == NULL) {
         return false;
     }
-    if (strncmp(buffer, "GET", 3) == 0 || strncmp(buffer, "POST", 4) == 0 || strncmp(buffer, "PUT", 3) == 0 || strncmp(buffer, "DELETE", 6) == 0) {
-        return true;
+
+    // List of valid HTTP methods
+    const char *methods[] = {
+        "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH", "CONNECT", "TRACE"
+    };
+
+    // Iterate through all valid methods and check if the buffer starts with one of them
+    size_t num_methods = sizeof(methods) / sizeof(methods[0]);
+    for (size_t i = 0; i < num_methods; i++) {
+        size_t method_len = strlen(methods[i]);
+        if (strncmp(buffer, methods[i], method_len) == 0) {
+            return true;
+        }
     }
+
+    return false;
+}
+
+bool request_might_have_data(const char *method) {
+    if (method == NULL) {
+        return false;
+    }
+
+    // List of HTTP methods that generally have a body
+    const char *methods_with_data[] = {
+        "POST", "PUT", "PATCH"
+    };
+
+    // Iterate through methods that have data
+    size_t num_methods = sizeof(methods_with_data) / sizeof(methods_with_data[0]);
+    for (size_t i = 0; i < num_methods; i++) {
+        if (strncmp(method, methods_with_data[i], strlen(methods_with_data[i])) == 0) {
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -905,28 +939,28 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
     char *last_rn_ptr = buffer;
     bool done = false;
 
-printf("\n\n\nBUFFER SIZE: %d\n", buffer_size);
-// printf("rn_state: %d\n", msg->rn_state);
-if (msg->rn_state == END_OF_CHUNK) {
-    printf("END OF CHUNK\n");
-}
-else if (msg->rn_state == END_OF_HEADER) {
-    printf("END OF HEADER\n");
-}
-        for (int i = 0; i < buffer_size; i++) {
-            if (buffer[i] == '\r') {
-                printf("\nslash r\n");
-            }
-            else if (buffer[i] == '\n') {
-                printf("\nslash n\n");
-            }
-            else if (buffer[i] == '\0') {
-                printf("\nnull terminator\n");
-            }
-            else {
-                printf("%d", buffer[i]);
-            }
-        }
+// printf("\n\n\nBUFFER SIZE: %d\n", buffer_size);
+// // printf("rn_state: %d\n", msg->rn_state);
+// if (msg->rn_state == END_OF_CHUNK) {
+//     printf("END OF CHUNK\n");
+// }
+// else if (msg->rn_state == END_OF_HEADER) {
+//     printf("END OF HEADER\n");
+// }
+//         // for (int i = 0; i < buffer_size; i++) {
+//         //     if (buffer[i] == '\r') {
+//         //         printf("\nslash r\n");
+//         //     }
+//         //     else if (buffer[i] == '\n') {
+//         //         printf("\nslash n\n");
+//         //     }
+//         //     else if (buffer[i] == '\0') {
+//         //         printf("\nnull terminator\n");
+//         //     }
+//         //     else {
+//         //         printf("%d", buffer[i]);
+//         //     }
+//         // }
 
     while (last_rn_ptr != NULL) {
         if (rn_ptr == NULL) {

@@ -35,5 +35,7 @@ void print_buffer(unsigned char *m, unsigned size);
 
 bool is_request(char *buffer);
 
+bool request_might_have_data(const char *method);
+
 #endif
 
