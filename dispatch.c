@@ -511,13 +511,16 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     return false;
                 }
 
+                printf("\n\nHEADER SENT:\n");
                 for (int i = 0; i < strlen(curr_message->header); i++) {
                     if (curr_message->header[i] == '\r') {
-                        fprintf(header_file, "\nR\n");
+                        printf("\nR");
                     } else if (curr_message->header[i] == '\n') {
-                        fprintf(header_file, "\nN\n");
+                        printf("N\n");
+                    } else if (!isalnum(curr_message->header[i])) {
+                        putchar('.');
                     } else {
-                        fputc(curr_message->header[i], header_file);
+                        putchar(curr_message->header[i]);
                     }
                 }
 
@@ -548,6 +551,21 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 curr_message->content_length_read -= curr_message->original_header_length;
                 buffer += curr_part_of_header_length;
                 read_n -= curr_part_of_header_length;
+
+                if (read_n > 0) {
+                    printf("\n\n\nBUFFER LEFTOVER:\n");
+                    for (int i = 0; i < read_n; i++) {
+                        if (buffer[i] == '\r') {
+                            printf("\nR");
+                        } else if (buffer[i] == '\n') {
+                            printf("N\n");
+                        } else if (!isalnum(buffer[i])) {
+                            putchar('.');
+                        } else {
+                            putchar(buffer[i]);
+                        }
+                    }
+                }
             }
 
             // If there are more bytes to be sent in the response
@@ -602,32 +620,22 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     // NOTE: known bug here in this function when curling quora.
                     // things don't work the way I expect
                     int new_buffer_length = 0;
+                    char *new_buffer = "hi";
 
-                    char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
 
+                    // char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
 
+                    
                     // no injection
-                    // write_n = SSL_write(curr_context->client_ssl, new_buffer, new_buffer_length);
+                    write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
 
                     // printf("Before Injection\n%s\n", new_buffer);
 
                     // injection
-                    int to_send_length = new_buffer_length;
-                    char *to_send = inject_script_into_chunked_html(new_buffer, &to_send_length);
+                    // int to_send_length = new_buffer_length;
+                    // char *to_send = inject_script_into_chunked_html(new_buffer, &to_send_length);
 
-                    write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-                    // printf("to_send_length: %d\n", to_send_length);
-                    // printf("wrote:\n");
-                    // for (int i = 0; i < to_send_length; i++) {
-                    //     if (to_send[i] == '\r') {
-                    //         printf("R");
-                    //     } else if (to_send[i] == '\n') {
-                    //         printf("N");
-                    //     } else {
-                    //         printf("%c", to_send[i]);
-                    //     }
-                    // }
-                    // printf("COMPLETE\n");
+                    // write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
 
                     if (write_n <= 0) {
                         // if we just get rid of this data, won't that data just be lost?
@@ -656,7 +664,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                     }
 
-                    free(new_buffer);
+                    // free(new_buffer);
                     new_buffer = NULL;
                 }
             }
