@@ -187,11 +187,16 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
             // Format response to use chunked encoding
             modify_content_type(curr_message);
         }
+
+        return curr_message;
     }
 
-    // printf("Header is:\n %s\n\n", curr_message->header);
-
-    return curr_message;
+    else {
+        // header was already made and assembled before?
+        // should never be the case
+        assert(false);
+        return NULL;
+    }
 }
 
 void modify_content_type(incomplete_message *msg) {
