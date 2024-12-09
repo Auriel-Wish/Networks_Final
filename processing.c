@@ -517,7 +517,7 @@ char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
 
             // Calculate the new chunk size string length
             char new_chunk_size_str[17];
-            int new_chunk_size_str_len = sprintf(new_chunk_size_str, "%lx", new_chunk_size);
+            int new_chunk_size_str_len = snprintf(new_chunk_size_str, 17, "%lx", new_chunk_size);
 
             // Calculate difference in chunk size field length
             int old_chunk_size_str_len = chunk_size_len;
@@ -843,7 +843,7 @@ bool request_might_have_data(const char *method) {
 // }
 char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
     char chunk_header[20];
-    sprintf(chunk_header, "%X\r\n", *data_length);
+    snprintf(chunk_header, 20, "%X\r\n", *data_length);
 
     // Allocate memory for header, data, \r\n, and null terminator
     size_t chunk_header_len = strlen(chunk_header);
