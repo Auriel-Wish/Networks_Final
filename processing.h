@@ -33,6 +33,8 @@ char *get_content_length_ptr(char *str);
 
 void print_buffer(unsigned char *m, unsigned size);
 
+void print_buffer_s(char *m, unsigned size);
+
 bool is_request(char *buffer);
 
 #endif

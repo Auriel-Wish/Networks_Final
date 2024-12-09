@@ -335,10 +335,12 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         buffer += curr_part_of_header_length;
         read_n -= curr_part_of_header_length;
 
-        // curr_message->header_sent = true;
-        // curr_message->content_length_read -= curr_message->original_header_length;
-        // buffer += curr_message->original_header_length;
-        // read_n -= curr_message->original_header_length;
+        // new plan: after the header gets sent to the server, we are going to
+        // remove it from the LinkedList
+        printf("Cleaning up here\n");
+        free(curr_message->header);
+        removeNode(all_messages, curr_message);
+
     }
 
     // NOTE: potential bug: we're concerned that for HTTP requests which contain
@@ -346,28 +348,41 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
     // there is no body to be read, we will have an open socket that will never
     // have data sent to it again, that will just remain open.
 
-    // sending body
+    // if the request has a body, send the body
+    // printf("Trying to send body...");
     if (read_n > 0 && curr_message->header_sent) {
+
+        // if the message is sent with CHUNKED or OTHER encoding
         if (curr_message->original_content_type != NORMAL_ENCODING) {
 
             write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
             if (write_n <= 0) {
+                // write FAILED
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
                 return false;
             }
 
             if (contains_chunk_end(buffer, read_n)) {
+                // complete write SUCCEEDED
+                printf("Complete write SUCCEEDED\n");
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
+                return true;
             }
+
+            // We only PARTIALLY wrote the post request (uh oh)
+            // assert(false);
         }
 
+        // if the message was sent with Content-Length (NORMAL) encoding
         else {
+            printf("Not expecting to be here\n");
             write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
             if (write_n <= 0) {
+                // write FAILED
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
                 return false;
@@ -377,11 +392,19 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
                 if (contains_chunk_end(buffer, read_n)) {
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
+                    return true;
                 }
-            } else if (curr_message->original_content_type == NORMAL_ENCODING 
-                       && curr_message->content_length_read >= curr_message->content_length) {
+
+                // NOTE: I don't understand this
+            } 
+            
+
+            else if (curr_message->original_content_type == NORMAL_ENCODING 
+                     && curr_message->content_length_read >= curr_message->content_length) {
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
+                
+                // NOTE: I don't understand this
             }
         }
     }
@@ -427,7 +450,15 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                     curr_context->client_fd);
 
             if (curr_message == NULL || !(curr_message->header_complete)) {
+                printf("Client request is incomplete: ");
                 curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
+            } 
+            
+            else {
+                printf("Client request is already complete:\n");
+
+                //printing the buffer
+                print_buffer_s(curr_message->header, curr_message->original_header_length);
             }
 
             // Step 3: See if the message is a fact-check request from the 
@@ -476,9 +507,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     else { //if (read_n > 0)
         incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
         if (curr_message == NULL || !(curr_message->header_complete)) {
-            if (curr_message == NULL) {
-                // printf("Curr messange is NULL\n");
-            }
+            printf("Response to client: ");
             curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);
         }
 
@@ -561,8 +590,8 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 }
 
                 if (curr_message->content_length_read >= curr_message->content_length) {
-                    // printf("\nremove node 4\n");
-                    
+                    // I'm not expecting to see this
+                    // assert(false);
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
                 }
@@ -623,32 +652,18 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 }
 
                 if (contains_chunk_end(new_buffer, new_buffer_length)) {
-                    printf("\nremove node 6\n");
+                    printf("\nFound End of Chunk, removing node\n");
                     // printf("\n\n\nNew buffer is:\n %s\n\n\n", new_buffer);
                     
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
+                    // free(curr_message);
+                    curr_message = NULL;
                     return false;
 
                 }
-                // if (contains_chunk_end(buffer, read_n)) {
-                //     printf("\nremove node 6\n");
-                //     // printf("\n\n\nNew buffer is:\n %s\n\n\n", new_buffer);
-                    
-                //     free(curr_message->header);
-                //     removeNode(all_messages, curr_message);
-                //     return false;
 
-                // }
-                // printf("\n\n");
-                // for (int i = 0; i < new_buffer_length; i++) {
-                //     printf("%c", new_buffer[i]);
-                // }
-                // printf("\n\n");
-
-                // printf("freeing new buffer\n");
                 free(new_buffer);
-                // printf("freed new buffer\n");
                 new_buffer = NULL;
 
                 // printf("original_content_type: %d\n", curr_message->original_content_type);

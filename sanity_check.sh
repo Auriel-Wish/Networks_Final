@@ -13,3 +13,8 @@ rm curl_wiki.txt our_wiki.txt
 # curl --proxy localhost:1026 https://www.quora.com/What-would-happen-if-Xi-Jinping-was-assassinated-when-he-visited-California-or-was-shot-at-and-survived-and-how-would-the-Chinese-react-if-anything-happened-to-him -o our_quora.txt
 # curl https://www.quora.com/What-would-happen-if-Xi-Jinping-was-assassinated-when-he-visited-California-or-was-shot-at-and-survived-and-how-would-the-Chinese-react-if-anything-happened-to-him -o curl_quora.txt 
 # diff curl_quora.txt our_quora.txt
+
+curl --proxy localhost:1026 https://www.quora.com/What-would-happen-if-Xi-Jinping-was-assassinated-when-he-visited-California-or-was-shot-at-and-survived-and-how-would-the-Chinese-react-if-anything-happened-to-him -o our_quora.txt
+curl --proxy localhost:1026 https://www.quora.com/Why-do-so-many-US-people-not-understand-how-advanced-China-has-become -o struggles.txt
+
+curl --proxy localhost:1026 https://example.com/

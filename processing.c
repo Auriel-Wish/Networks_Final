@@ -78,7 +78,8 @@ char *convert_normal_to_chunked_encoding(char *buffer, int buffer_length, incomp
         int chunk_size = remaining;
 
         // Write the chunk size in hexadecimal, followed by \r\n
-        int header_length = sprintf(output_ptr, "%x\r\n", chunk_size);
+        // int header_length = sprintf(output_ptr, "%x\r\n", chunk_size);
+        int header_length = snprintf(output_ptr, max_output_size, "%x\r\n", chunk_size);
         output_ptr += header_length;
 
         // Copy the chunk data into the output buffer
@@ -120,8 +121,10 @@ bool contains_chunk_end(char *buffer, int buffer_length) {
 
 incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, int filedes, Node **all_messages) {
     incomplete_message *curr_message = *msg;
+
+    // If the message object hasn't been made yet, make it
     if (curr_message == NULL) {
-        // printf("\nMAKING NEW MESSAGE\n");
+        printf(" MAKING NEW MESSAGE\n");
         curr_message = malloc(sizeof(incomplete_message));
         assert(curr_message != NULL);
         curr_message->filedes = filedes;
@@ -137,38 +140,51 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
     }
 
     else {
-        // printf("\nNOT NEW MESSAGE\n");
+        printf(" NOT NEW MESSAGE\n");
     }
 
+    // If the message header hasn't been fully assembled yet
     if (!(curr_message->header_complete)) {
-        char *header_end = strstr(buffer, "\r\n\r\n");
         char *only_header = NULL;
+        char *header_end = strstr(buffer, "\r\n\r\n");
+
         if (header_end != NULL) {
+            // successfully found End of Header in most recent buffer read
             curr_message->header_complete = true;
-            only_header = malloc(header_end - buffer + 4 + 1);
+            only_header = calloc(header_end - buffer + 4 + 1, sizeof(char));
             memcpy(only_header, buffer, header_end - buffer + 4);
             only_header[header_end - buffer + 4] = '\0';
         }
+
         else {
-            only_header = malloc(strlen(buffer) + 1);
+            // did not find End of Header
+            only_header = calloc(strlen(buffer) + 1, sizeof(char));
             strcpy(only_header, buffer);
         }
 
         curr_message->original_header_length += strlen(only_header);
+
         if (curr_message->header == NULL) {
-            curr_message->header = malloc(curr_message->original_header_length + 1);
+            // If the header buffer doesn't exist, create it
+            curr_message->header = calloc(curr_message->original_header_length + 1, sizeof(char));
             assert(curr_message->header != NULL);
             strcpy(curr_message->header, only_header);
-        } else {
-            curr_message->header = realloc(curr_message->header, curr_message->original_header_length + 1);
+        } 
+        
+        else {
+            // if the header buffer already exists, append to it
+            curr_message->header = realloc(curr_message->header, 
+                curr_message->original_header_length + 1);
             assert(curr_message->header != NULL);
             strcat(curr_message->header, only_header);
         }
 
         if (is_request(curr_message->header)) {
+            // Prevent server response from using encoding
             modify_accept_encoding(curr_message);
         }
         else {
+            // Format response to use chunked encoding
             modify_content_type(curr_message);
         }
     }
@@ -514,7 +530,7 @@ char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
 
             // Calculate the new chunk size string length
             char new_chunk_size_str[17];
-            int new_chunk_size_str_len = sprintf(new_chunk_size_str, "%lx", new_chunk_size);
+            int new_chunk_size_str_len = snprintf(new_chunk_size_str, 17, "%lx", new_chunk_size);
 
             // Calculate difference in chunk size field length
             int old_chunk_size_str_len = chunk_size_len;
@@ -595,6 +611,27 @@ char *get_content_length_ptr(char *str) {
 }
 
 void print_buffer(unsigned char *m, unsigned size)
+{
+    // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
+    //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
+    // printf("\nSize of buffer: %d\n", size);
+    if (size > 0) {
+        printf("Message content is: ");
+        for (unsigned offset = 0; offset < size; offset++) {
+            if (m[offset] == '\0') {
+                putchar('.');
+            }
+
+            else {
+                putchar(m[offset]);
+            }
+        }
+
+        printf("\n");
+    }
+}
+
+void print_buffer_s(char *m, unsigned size)
 {
     // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
     //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
@@ -807,7 +844,7 @@ bool is_request(char *buffer) {
 // }
 char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
     char chunk_header[20];
-    sprintf(chunk_header, "%X\r\n", *data_length);
+    snprintf(chunk_header, 20, "%X\r\n", *data_length);
 
     // Allocate memory for header, data, \r\n, and null terminator
     size_t chunk_header_len = strlen(chunk_header);
@@ -841,15 +878,15 @@ char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
     chunked_data[chunk_header_len + *data_length] = '\r';
     chunked_data[chunk_header_len + *data_length + 1] = '\n';
     chunked_data[chunk_header_len + *data_length + 2] = '\0';
-    printf("\nNEW\n");
-    for (int i = 0; i < chunk_header_len + *data_length + 2; i++) {
+    // printf("\nNEW\n");
+    for (unsigned i = 0; i < chunk_header_len + *data_length + 2; i++) {
         if (chunked_data[i] == '\r') {
-            putchar('\nSLASH R\n');
+            // putchar('\nSLASH R\n');
         }
         else if (chunked_data[i] == '\n') {
-            putchar('\nSLASH N\n');
+            // putchar('\nSLASH N\n');
         } else {
-            putchar(chunked_data[i]);
+            // putchar(chunked_data[i]);
         }
     }
     // if (contains_chunk_end(chunked_data, chunk_header_len + *data_length + 2)) {
@@ -902,12 +939,12 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
             if (curr_chunk_size == 5) {
                 for (int i = 0; i < 5; i++) {
                     if (last_rn_ptr[i] == '\r') {
-                        putchar('\nSLASH R\n');
+                        // putchar('\nSLASH R\n');
                     }
                     else if (last_rn_ptr[i] == '\n') {
-                        putchar('\nSLASH N\n');
+                        // putchar('\nSLASH N\n');
                     } else {
-                        putchar(last_rn_ptr[i]);
+                        // putchar(last_rn_ptr[i]);
                     }
                 }
             }
@@ -955,7 +992,7 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
     char *to_send = make_chunk_header_and_end(new_buffer, output_buffer_size);
 
     if (contains_chunk_end(to_send, *output_buffer_size)) {
-        printf("\n2 BUFFER CONTAINS END OF MESSAGE\n");
+        // printf("\n2 BUFFER CONTAINS END OF MESSAGE\n");
         // printf("BUFFER: %s\n", buffer);
         to_send = add_end_of_message_chunk(to_send, output_buffer_size);
     }
