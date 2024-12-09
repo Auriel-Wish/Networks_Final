@@ -597,7 +597,7 @@ char *get_content_length_ptr(char *str) {
     return content_length;
 }
 
-void print_buffer(unsigned char *m, unsigned size)
+void print_buffer(char *m, unsigned size)
 {
     // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
     //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
@@ -829,18 +829,6 @@ bool request_might_have_data(const char *method) {
     return false;
 }
 
-// char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
-//     char chunk_header[20];
-//     sprintf(chunk_header, "%X\r\n", *data_length);
-//     char *chunked_data = malloc(strlen(chunk_header) + *data_length + 3); // +3 for \r\n and null terminator
-//     strcpy(chunked_data, chunk_header);
-//     memcpy(chunked_data + strlen(chunk_header), buffer_only_data, *data_length);
-//     strcat(chunked_data, "\r\n");
-//     *data_length = *data_length + strlen(chunk_header) + 2;
-//     free(buffer_only_data);
-
-//     return chunked_data;
-// }
 char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
     char chunk_header[20];
     snprintf(chunk_header, 20, "%X\r\n", *data_length);
@@ -911,7 +899,46 @@ char *find_next_rn(char *buffer, int buffer_size) {
     return rn_ptr;
 }
 
+void mod_print_buffer(char *m, unsigned size)
+{
+    // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
+    //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
+    // printf("\nSize of buffer: %d\n", size);
+    if (size > 0) {
+        printf("Message content is: ");
+        for (unsigned offset = 0; offset < size; offset++) {
+            putchar(m[offset]);
+
+            // if (m[offset] == '\0') {
+            //     putchar('.');
+            // }
+
+            // else {
+            //     putchar(m[offset]);
+            // }
+        }
+
+        printf("\n");
+    }
+}
+
 char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_size, int *output_buffer_size) {
+    printf("Called for the first time HERE\n");
+    fprintf(stderr, "Buffer: %s", buffer);
+
+    mod_print_buffer(buffer, buffer_size);
+    char *first_end = strstr(buffer, "\r\n");
+
+    int dist = first_end - buffer;
+    char *test1 = calloc(dist + 1, sizeof(char));
+    memcpy(test1, buffer, dist);
+    test1[dist] = '\0';
+    printf("Made it %d bytes\n", dist);
+
+    int help = atoi(test1);
+    printf("I thinkg this should be the right number: %d\n", help);
+
+    assert(false);
     if (msg->read_ended_with_slash_r) {
         printf("\nread ended with slash r\n");
         if (buffer[0] == '\n') {
@@ -963,8 +990,20 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
                 new_buffer = realloc(new_buffer, *output_buffer_size + curr_chunk_size);
                 memcpy(new_buffer + *output_buffer_size, last_rn_ptr, curr_chunk_size);
             }
+                // place data in new buffer
+                if (new_buffer == NULL) {
+                    new_buffer = malloc(curr_chunk_size);
+                    memcpy(new_buffer, last_rn_ptr, curr_chunk_size);
+                }
+
+                // if new buffer is already allocated, realloc and copy data
+                else {
+                    new_buffer = realloc(new_buffer, *output_buffer_size + curr_chunk_size);
+                    memcpy(new_buffer + *output_buffer_size, last_rn_ptr, curr_chunk_size);
+                }
 
             *output_buffer_size += curr_chunk_size;
+                *output_buffer_size += curr_chunk_size;
 
             msg->rn_state = END_OF_CHUNK;
         }

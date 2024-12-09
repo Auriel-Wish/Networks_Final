@@ -31,7 +31,7 @@ char *make_chunk_header_and_end(char *buffer_only_data, int *data_length);
 
 char *get_content_length_ptr(char *str);
 
-void print_buffer(unsigned char *m, unsigned size);
+void print_buffer_(char *m, unsigned size);
 
 bool is_request(char *buffer);
 

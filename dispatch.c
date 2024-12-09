@@ -346,6 +346,8 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
     // there is no body to be read, we will have an open socket that will never
     // have data sent to it again, that will just remain open.
 
+    //
+
     // sending body
     if (read_n > 0 && curr_message->header_sent) {
         if (curr_message->original_content_type != NORMAL_ENCODING) {
@@ -449,6 +451,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                         curr_context, all_messages, buffer);
                 }
             }
+
             else {
                 int write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
                 if (write_n <= 0) {
@@ -509,9 +512,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 // printf("Header length %d\n", header_length);
                 // printf("In the struct is %d\n", curr_message->original_header_length);
                 printf("About to send the HEADER to client\n\n");
-                printf("length of header: %d\n", strlen(curr_message->header));
+                printf("length of header: %ld\n", strlen(curr_message->header));
                 // printf("%s\n", curr_message->header);
-                for (int i = 0; i < strlen(curr_message->header); i++) {
+                for (unsigned i = 0; i < strlen(curr_message->header); i++) {
                     if (curr_message->header[i] == '\r') {
                         printf("\nR\n");
                     } else if (curr_message->header[i] == '\n') {
@@ -596,6 +599,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                         removeNode(all_messages, curr_message);
                     }
                 }
+
                 else {
                     // NOTE: known bug here in this function when curling quora.
                     // things don't work the way I expect
@@ -661,7 +665,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
             return true;
         }
+
         else {
+            // Send data from all other sites straight through
             write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
 
             if (write_n <= 0) {
