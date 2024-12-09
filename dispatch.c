@@ -319,6 +319,14 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
 
         write_n = SSL_write(curr_context->server_ssl, curr_message->header, 
             curr_message->original_header_length);
+        
+        // This was working here, but I'm still trying to track down why
+        // complete headers are reappearing, so I moved it to the end of the
+        // function
+
+        // // NEW CHANGE: Remove the sent header
+        // free(curr_message->header);
+        // removeNode(all_messages, curr_message);
 
         if (write_n <= 0) {
             free(curr_message->header);
@@ -334,13 +342,6 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         curr_message->content_length_read -= curr_message->original_header_length;
         buffer += curr_part_of_header_length;
         read_n -= curr_part_of_header_length;
-
-        // new plan: after the header gets sent to the server, we are going to
-        // remove it from the LinkedList
-        printf("Cleaning up here\n");
-        free(curr_message->header);
-        removeNode(all_messages, curr_message);
-
     }
 
     // NOTE: potential bug: we're concerned that for HTTP requests which contain
@@ -349,36 +350,14 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
     // have data sent to it again, that will just remain open.
 
     // if the request has a body, send the body
-    // printf("Trying to send body...");
     if (read_n > 0 && curr_message->header_sent) {
-
-        // if the message is sent with CHUNKED or OTHER encoding
-        if (curr_message->original_content_type != NORMAL_ENCODING) {
-
-            write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
-
-            if (write_n <= 0) {
-                // write FAILED
-                free(curr_message->header);
-                removeNode(all_messages, curr_message);
-                return false;
-            }
-
-            if (contains_chunk_end(buffer, read_n)) {
-                // complete write SUCCEEDED
-                printf("Complete write SUCCEEDED\n");
-                free(curr_message->header);
-                removeNode(all_messages, curr_message);
-                return true;
-            }
-
-            // We only PARTIALLY wrote the post request (uh oh)
-            // assert(false);
-        }
+        // There are more bytes to send and the header was already sent, so the
+        // request had a body
+        printf("PUT REQUEST..");
 
         // if the message was sent with Content-Length (NORMAL) encoding
-        else {
-            printf("Not expecting to be here\n");
+        if (curr_message->original_content_type == NORMAL_ENCODING) {
+            printf(" Content-Length ENCODING\n");
             write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
             if (write_n <= 0) {
@@ -387,28 +366,54 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
                 removeNode(all_messages, curr_message);
                 return false;
             }
+        }
 
-            if (curr_message->original_content_type == CHUNKED_ENCODING) {
-                if (contains_chunk_end(buffer, read_n)) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                    return true;
-                }
+        // if the message is sent with CHUNKED encoding
+        else if (curr_message->original_content_type == CHUNKED_ENCODING) {
+            printf(" CHUNKED ENCODING\n");
 
-                // NOTE: I don't understand this
-            } 
-            
+            write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
-            else if (curr_message->original_content_type == NORMAL_ENCODING 
-                     && curr_message->content_length_read >= curr_message->content_length) {
+            free(curr_message->header);
+            removeNode(all_messages, curr_message);
+
+            if (write_n <= 0) {
+                // write FAILED
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
-                
-                // NOTE: I don't understand this
+                return false;
             }
+
+            // if (contains_chunk_end(buffer, read_n)) {
+            //     // complete write SUCCEEDED
+            //     printf("Complete write SUCCEEDED\n");
+            //     free(curr_message->header);
+            //     removeNode(all_messages, curr_message);
+            //     return true;
+            // }
+
+            // // We only PARTIALLY wrote the post request (uh oh)
+            // // assert(false);
+            // return true;
+        }
+
+        // if the message was sent with OTHER encoding
+        else if (curr_message->original_content_type == OTHER_ENCODING) {
+            // Weird case: do nothing and drop the message
+            free(curr_message->header);
+            removeNode(all_messages, curr_message);
+            return true;
+        }
+
+        else {
+            // This should never happen
+            assert(false);
         }
     }
 
+    // Free message and keep connection open
+    free(curr_message->header);
+    removeNode(all_messages, curr_message);
     return true;
 }
 
@@ -450,12 +455,17 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
                     curr_context->client_fd);
 
             if (curr_message == NULL || !(curr_message->header_complete)) {
-                printf("Client request is incomplete: ");
+                // printf("Client request is incomplete: ");
                 curr_message = modify_header_data(&curr_message, buffer, curr_context->client_fd, all_messages);
             } 
             
             else {
-                printf("Client request is already complete:\n");
+                // The big mystery: Why are there fully complete client request being buffered in all_messages?
+                // They should have been sent and cleared
+                printf("BAD: Client request is already complete:\n");
+
+                // lets just drop all these for now and see what happens
+                // return false;
 
                 //printing the buffer
                 print_buffer_s(curr_message->header, curr_message->original_header_length);
@@ -466,6 +476,7 @@ bool read_client_request(int client_fd, Node **ssl_contexts,
             char *fact_check = strstr(curr_message->header, 
                 "fact-check-CS112-Final");
             if (fact_check != NULL) {
+                assert(false);
                 return handle_fact_check_request(buffer, curr_message, 
                     LLM_sockfd, python_addr, curr_context, all_messages);
             }
@@ -507,7 +518,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     else { //if (read_n > 0)
         incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
         if (curr_message == NULL || !(curr_message->header_complete)) {
-            printf("Response to client: ");
+            // printf("Response to client: ");
             curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);
         }
 
@@ -596,7 +607,12 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     removeNode(all_messages, curr_message);
                 }
             }
+
+            // Chunked Encoding
             else {
+                // should leave this in, but having problems
+                // assert(curr_message->original_content_type == CHUNKED_ENCODING);
+
                 // NOTE: known bug here in this function when curling quora.
                 // things don't work the way I expect
                 int new_buffer_length = 0;
@@ -833,4 +849,70 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
         return true;
     }
 }
+*/
+
+/* Old garbage down here:
+if (read_n > 0 && curr_message->header_sent) {
+        There are more bytes to send and the header was already sent, so the
+        request had a body
+        printf("PUT REQUEST\n");
+
+        // if the message is sent with CHUNKED or OTHER encoding
+        if (curr_message->original_content_type != NORMAL_ENCODING) {
+
+            write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
+
+            if (write_n <= 0) {
+                // write FAILED
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+                return false;
+            }
+
+            if (contains_chunk_end(buffer, read_n)) {
+                // complete write SUCCEEDED
+                printf("Complete write SUCCEEDED\n");
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+                return true;
+            }
+
+            // We only PARTIALLY wrote the post request (uh oh)
+            // assert(false);
+        }
+
+        // if the message was sent with Content-Length (NORMAL) encoding
+        else {
+            // printf("Not expecting to be here\n");
+            write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
+
+            if (write_n <= 0) {
+                // write FAILED
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+                return false;
+            }
+
+            if (curr_message->original_content_type == CHUNKED_ENCODING) {
+                if (contains_chunk_end(buffer, read_n)) {
+                    free(curr_message->header);
+                    removeNode(all_messages, curr_message);
+                    return true;
+                }
+
+                // NOTE: I don't understand this
+            } 
+            
+
+            else if (curr_message->original_content_type == NORMAL_ENCODING 
+                     && curr_message->content_length_read >= curr_message->content_length) {
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+                
+                // NOTE: I don't understand this
+            }
+        }
+    }
+
+    return true;
 */

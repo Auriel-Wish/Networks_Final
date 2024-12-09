@@ -124,7 +124,7 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
 
     // If the message object hasn't been made yet, make it
     if (curr_message == NULL) {
-        printf(" MAKING NEW MESSAGE\n");
+        // printf(" MAKING NEW MESSAGE\n");
         curr_message = malloc(sizeof(incomplete_message));
         assert(curr_message != NULL);
         curr_message->filedes = filedes;
@@ -140,7 +140,7 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
     }
 
     else {
-        printf(" NOT NEW MESSAGE\n");
+        // printf(" NOT NEW MESSAGE\n");
     }
 
     // If the message header hasn't been fully assembled yet
@@ -648,7 +648,7 @@ void print_buffer_s(char *m, unsigned size)
             }
         }
 
-        printf("\n");
+        // printf("\n");
     }
 }
 
