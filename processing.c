@@ -79,6 +79,7 @@ char *convert_normal_to_chunked_encoding(char *buffer, int buffer_length, incomp
 
         // Write the chunk size in hexadecimal, followed by \r\n
         int header_length = sprintf(output_ptr, "%x\r\n", chunk_size);
+
         output_ptr += header_length;
 
         // Copy the chunk data into the output buffer
@@ -133,6 +134,7 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
         curr_message->header_sent = false;
         curr_message->original_content_type = OTHER_ENCODING;
         curr_message->rn_state = END_OF_CHUNK;
+        curr_message->read_ended_with_slash_r = false;
         append(all_messages, curr_message);
     }
 
@@ -821,41 +823,30 @@ char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
 
     // Copy header, data, and append \r\n
     strcpy(chunked_data, chunk_header);
-    if (contains_chunk_end(chunked_data, chunk_header_len)) {
-        printf("\n1 BUFFER CONTAINS END OF MESSAGE\n");
-    }
+    // if (contains_chunk_end(chunked_data, chunk_header_len)) {
+    //     printf("\n1 BUFFER CONTAINS END OF MESSAGE\n");
+    // }
     memcpy(chunked_data + chunk_header_len, buffer_only_data, *data_length);
     // if (contains_chunk_end(chunked_data, chunk_header_len + *data_length)) {
     //     printf("\n2 BUFFER CONTAINS END OF MESSAGE\n");
     // }
-    // for (int i = 0; i < *data_length; i++) {
-    //     if (chunked_data[chunk_header_len + i] == '\r') {
-    //         putchar('\nSLASH R\n');
-    //     }
-    //     else if (chunked_data[chunk_header_len + i] == '\n') {
-    //         putchar('\nSLASH N\n');
-    //     } else {
-    //         putchar(chunked_data[chunk_header_len + i]);
-    //     }
-    // }
+
     chunked_data[chunk_header_len + *data_length] = '\r';
     chunked_data[chunk_header_len + *data_length + 1] = '\n';
     chunked_data[chunk_header_len + *data_length + 2] = '\0';
-    printf("\nNEW\n");
-    for (int i = 0; i < chunk_header_len + *data_length + 2; i++) {
-        if (chunked_data[i] == '\r') {
-            putchar('\nSLASH R\n');
-        }
-        else if (chunked_data[i] == '\n') {
-            putchar('\nSLASH N\n');
-        } else {
-            putchar(chunked_data[i]);
-        }
-    }
-    // if (contains_chunk_end(chunked_data, chunk_header_len + *data_length + 2)) {
-    //     printf("\n3 BUFFER CONTAINS END OF MESSAGE\n");
-    // }
 
+    if (contains_chunk_end(chunked_data, chunk_header_len + *data_length + 2)) {
+        printf("\n3 BUFFER CONTAINS END OF MESSAGE\n");
+        printf("chunked_data[chunk_header_len + *data_length - 3]: %d\n", chunked_data[chunk_header_len + *data_length - 3]);
+    printf("chunked_data[chunk_header_len + *data_length - 2]: %d\n", chunked_data[chunk_header_len + *data_length - 2]);
+    printf("chunked_data[chunk_header_len + *data_length - 1]: %d\n", chunked_data[chunk_header_len + *data_length - 1]);
+    printf("chunked_data[chunk_header_len + *data_length]: %d\n", chunked_data[chunk_header_len + *data_length - 0]);
+    printf("chunked_data[chunk_header_len + *data_length + 1]: %d\n", chunked_data[chunk_header_len + *data_length + 1]);
+    printf("chunked_data[chunk_header_len + *data_length + 2]: %d\n", chunked_data[chunk_header_len + *data_length + 2]);
+
+    }
+
+    
     // Update data length to include header and \r\n
     *data_length = chunk_header_len + *data_length + 2;
 
@@ -875,15 +866,67 @@ char *add_end_of_message_chunk(char *buffer, int *buffer_length) {
     return new_buffer;
 }
 
+char *find_next_rn(char *buffer, int buffer_size) {
+    char *rn_ptr = NULL;
+    for (char *search_ptr = buffer; search_ptr < buffer + buffer_size - 1; search_ptr++) {
+        if (search_ptr[0] == '\r' && search_ptr[1] == '\n') {
+            rn_ptr = search_ptr;
+            break;
+        }
+    }
+    return rn_ptr;
+}
+
 char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_size, int *output_buffer_size) {
+    if (msg->read_ended_with_slash_r) {
+        printf("\nread ended with slash r\n");
+        if (buffer[0] == '\n') {
+            printf("\nbuffer starts with slash n\n");
+            if (buffer_size >= 3 && buffer[1] == '\r' && buffer[2] == '\n') {
+                printf("\nbuffer contains end of message\n");
+                *output_buffer_size = 0;
+                char *ret = malloc(5 + 1);
+                strcpy(ret, "0\r\n\r\n");
+                return ret;
+            }
+            else {
+                memmove(buffer + 1, buffer, buffer_size);
+                buffer[0] = '\r';
+                buffer_size++;
+                msg->read_ended_with_slash_r = false;
+            }
+        }
+    }
+    
     // printf("PROCESSING CHUNKED DATA\n");
     char *new_buffer = NULL;
     *output_buffer_size = 0;
-    char *rn_ptr = strstr(buffer, "\r\n");
+    char *rn_ptr = find_next_rn(buffer, buffer_size);
     char *last_rn_ptr = buffer;
     bool done = false;
 
-    // printf("BUFFER: %s\n", buffer);
+printf("\n\n\nBUFFER SIZE: %d\n", buffer_size);
+// printf("rn_state: %d\n", msg->rn_state);
+if (msg->rn_state == END_OF_CHUNK) {
+    printf("END OF CHUNK\n");
+}
+else if (msg->rn_state == END_OF_HEADER) {
+    printf("END OF HEADER\n");
+}
+        for (int i = 0; i < buffer_size; i++) {
+            if (buffer[i] == '\r') {
+                printf("\nslash r\n");
+            }
+            else if (buffer[i] == '\n') {
+                printf("\nslash n\n");
+            }
+            else if (buffer[i] == '\0') {
+                printf("\nnull terminator\n");
+            }
+            else {
+                printf("%d", buffer[i]);
+            }
+        }
 
     while (last_rn_ptr != NULL) {
         if (rn_ptr == NULL) {
@@ -898,33 +941,23 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
         // if what comes between last_rn_ptr and rn_ptr is data
         else if (msg->rn_state == END_OF_HEADER) {
             int curr_chunk_size = rn_ptr - last_rn_ptr;
-            // printf("CHUNK SIZE: %d\n", curr_chunk_size);
-            if (curr_chunk_size == 5) {
-                for (int i = 0; i < 5; i++) {
-                    if (last_rn_ptr[i] == '\r') {
-                        putchar('\nSLASH R\n');
-                    }
-                    else if (last_rn_ptr[i] == '\n') {
-                        putchar('\nSLASH N\n');
-                    } else {
-                        putchar(last_rn_ptr[i]);
-                    }
-                }
-            }
-            // place data in new buffer
-            if (new_buffer == NULL) {
-                new_buffer = malloc(curr_chunk_size);
-                memcpy(new_buffer, last_rn_ptr, curr_chunk_size);
-            }
-            // if new buffer is already allocated, realloc and copy data
-            else {
-                new_buffer = realloc(new_buffer, *output_buffer_size + curr_chunk_size);
-                memcpy(new_buffer + *output_buffer_size, last_rn_ptr, curr_chunk_size);
-            }
 
-            // printf("output_buffer_size before: %X\n", *output_buffer_size);
-            *output_buffer_size += curr_chunk_size;
-            // printf("output_buffer_size after: %X\n", *output_buffer_size);
+            // if (curr_chunk_size > 0) {
+                // place data in new buffer
+                if (new_buffer == NULL) {
+                    new_buffer = malloc(curr_chunk_size);
+                    memcpy(new_buffer, last_rn_ptr, curr_chunk_size);
+                }
+                // if new buffer is already allocated, realloc and copy data
+                else {
+                    new_buffer = realloc(new_buffer, *output_buffer_size + curr_chunk_size);
+                    memcpy(new_buffer + *output_buffer_size, last_rn_ptr, curr_chunk_size);
+                }
+
+                // printf("output_buffer_size before: %X\n", *output_buffer_size);
+                *output_buffer_size += curr_chunk_size;
+                // printf("output_buffer_size after: %X\n", *output_buffer_size);
+            // }
 
             msg->rn_state = END_OF_CHUNK;
         }
@@ -937,28 +970,47 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
             } else if (msg->rn_state == END_OF_CHUNK) {
                 msg->rn_state = END_OF_HEADER;
             }
+
+            if (new_buffer != NULL && *output_buffer_size > 0) {
+                if (new_buffer[*output_buffer_size - 1] == '\r') {
+                    printf("\nlast char is slash r\n");
+                    msg->read_ended_with_slash_r = true;
+                    *output_buffer_size -= 1;
+                }
+            }
+
             break;
         }
 
         // update pointers
         last_rn_ptr = rn_ptr + 2;
-        // Search for the next occurrence of "\r\n" within the buffer bounds
-        rn_ptr = NULL;
-        for (char *search_ptr = last_rn_ptr + 2; search_ptr < buffer + buffer_size - 1; search_ptr++) {
-            if (search_ptr[0] == '\r' && search_ptr[1] == '\n') {
-                rn_ptr = search_ptr;
-                break;
-            }
-        }
+        rn_ptr = find_next_rn(last_rn_ptr, buffer + buffer_size - last_rn_ptr);
     }
 
-    char *to_send = make_chunk_header_and_end(new_buffer, output_buffer_size);
+    // if (new_buffer[*output_buffer_size - 1] == '\n' && new_buffer[*output_buffer_size - 2] == '\r') {
+    //     printf("\nnew buffer contains end of message\n");
+    // }
+    // printf("output_buffer_size: %d\n", *output_buffer_size);
+    // if (*output_buffer_size > 1) {
+    //     printf("new_buffer[*output_buffer_size - 1]: %d\n", new_buffer[*output_buffer_size - 1]);
+    //     printf("new_buffer[*output_buffer_size - 2]: %d\n", new_buffer[*output_buffer_size - 2]);
+    // }
 
-    if (contains_chunk_end(to_send, *output_buffer_size)) {
-        printf("\n2 BUFFER CONTAINS END OF MESSAGE\n");
-        // printf("BUFFER: %s\n", buffer);
-        to_send = add_end_of_message_chunk(to_send, output_buffer_size);
+    char *to_send = NULL;
+    if (new_buffer != NULL) {
+        to_send = make_chunk_header_and_end(new_buffer, output_buffer_size);
     }
+    // else {
+    //     *output_buffer_size = 5;
+    //     to_send = malloc(5 + 1);
+    //     strcpy(to_send, "0\r\n\r\n");
+    // }
+
+    // if (contains_chunk_end(to_send, *output_buffer_size)) {
+    //     printf("\n2 BUFFER CONTAINS END OF MESSAGE\n");
+    //     // printf("BUFFER: %s\n", buffer);
+    //     to_send = add_end_of_message_chunk(to_send, output_buffer_size);
+    // }
 
     
     return to_send;
