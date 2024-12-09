@@ -946,14 +946,14 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
     char *last_rn_ptr = buffer;
     bool done = false;
 
-printf("\n\n\nBUFFER SIZE: %d\n", buffer_size);
-// printf("rn_state: %d\n", msg->rn_state);
-if (msg->rn_state == END_OF_CHUNK) {
-    printf("END OF CHUNK\n");
-}
-else if (msg->rn_state == END_OF_HEADER) {
-    printf("END OF HEADER\n");
-}
+    printf("\n\n\nBUFFER SIZE: %d\n", buffer_size);
+    // printf("rn_state: %d\n", msg->rn_state);
+    if (msg->rn_state == END_OF_CHUNK) {
+        printf("END OF CHUNK\n");
+    }
+    else if (msg->rn_state == END_OF_HEADER) {
+        printf("END OF HEADER\n");
+    }
         for (int i = 0; i < buffer_size; i++) {
             if (buffer[i] == '\r') {
                 printf("\nslash r\n");
