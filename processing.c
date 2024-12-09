@@ -144,15 +144,32 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
     }
 
     if (!(curr_message->header_complete)) {
+
+        int buffer_length = strlen(buffer);
+        if (buffer_length < 4) {
+            printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
+        }
+        else {
+            if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
+                printf("\nFOUND NEWLINE\n");
+            }
+            if (buffer[buffer_length - 1] == '\r') {
+                printf("\nFOUND CARRIAGE RETURN\n");
+            }
+        }
+
+
         char *header_end = strstr(buffer, "\r\n\r\n");
         char *only_header = NULL;
         if (header_end != NULL) {
             curr_message->header_complete = true;
-            only_header = malloc(header_end - buffer + 4 + 1);
-            memcpy(only_header, buffer, header_end - buffer + 4);
-            only_header[header_end - buffer + 4] = '\0';
+            int only_header_size = header_end - buffer + 4;
+            only_header = malloc(only_header_size + 1);
+            memcpy(only_header, buffer, only_header_size);
+            only_header[only_header_size] = '\0';
         }
         else {
+            printf("\nELSE CASE\n");
             only_header = malloc(strlen(buffer) + 1);
             strcpy(only_header, buffer);
         }

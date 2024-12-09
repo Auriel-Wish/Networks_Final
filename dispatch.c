@@ -470,9 +470,10 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
     Context_T *curr_context = get_ssl_context_by_server_fd(*ssl_contexts, server_fd);
     if (curr_context == NULL) { return false; }
 
-    char buffer_arr[BUFFER_SIZE];
+    char buffer_arr[BUFFER_SIZE + 1];
     char *buffer = buffer_arr;
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
+    buffer_arr[read_n] = '\0';
 
     int write_n;
 
@@ -508,18 +509,26 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             if (!(curr_message->header_sent) && curr_message->header_complete) {
                 // printf("Header length %d\n", header_length);
                 // printf("In the struct is %d\n", curr_message->original_header_length);
-                printf("About to send the HEADER to client\n\n");
-                printf("length of header: %d\n", strlen(curr_message->header));
+                // printf("About to send the HEADER to client\n\n");
+                // printf("length of header: %d\n", strlen(curr_message->header));
                 // printf("%s\n", curr_message->header);
+                FILE *header_file = fopen("header.txt", "w");
+                if (header_file == NULL) {
+                    perror("Failed to open header.txt");
+                    return false;
+                }
+
                 for (int i = 0; i < strlen(curr_message->header); i++) {
                     if (curr_message->header[i] == '\r') {
-                        printf("\nR\n");
+                        fprintf(header_file, "\nR\n");
                     } else if (curr_message->header[i] == '\n') {
-                        printf("\nN\n");
+                        fprintf(header_file, "\nN\n");
                     } else {
-                        printf("%c", curr_message->header[i]);
+                        fputc(curr_message->header[i], header_file);
                     }
                 }
+
+                fclose(header_file);
 
                 //maybe we put this in the struct when we clean up
                 int changed_header_len = strlen(curr_message->header);
