@@ -511,18 +511,18 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     return false;
                 }
 
-                printf("\n\nHEADER SENT:\n");
-                for (int i = 0; i < strlen(curr_message->header); i++) {
-                    if (curr_message->header[i] == '\r') {
-                        printf("\nR");
-                    } else if (curr_message->header[i] == '\n') {
-                        printf("N\n");
-                    } else if (!isalnum(curr_message->header[i])) {
-                        putchar('.');
-                    } else {
-                        putchar(curr_message->header[i]);
-                    }
-                }
+                // printf("\n\nHEADER SENT:\n");
+                // for (size_t i = 0; i < strlen(curr_message->header); i++) {
+                //     if (curr_message->header[i] == '\r') {
+                //         printf("\nR");
+                //     } else if (curr_message->header[i] == '\n') {
+                //         printf("N\n");
+                //     } else if (!isalnum(curr_message->header[i])) {
+                //         putchar('.');
+                //     } else {
+                //         putchar(curr_message->header[i]);
+                //     }
+                // }
 
                 fclose(header_file);
 
@@ -552,20 +552,20 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 buffer += curr_part_of_header_length;
                 read_n -= curr_part_of_header_length;
 
-                if (read_n > 0) {
-                    printf("\n\n\nBUFFER LEFTOVER:\n");
-                    for (int i = 0; i < read_n; i++) {
-                        if (buffer[i] == '\r') {
-                            printf("\nR");
-                        } else if (buffer[i] == '\n') {
-                            printf("N\n");
-                        } else if (!isalnum(buffer[i])) {
-                            putchar('.');
-                        } else {
-                            putchar(buffer[i]);
-                        }
-                    }
-                }
+                // if (read_n > 0) {
+                //     printf("\n\n\nBUFFER LEFTOVER:\n");
+                //     for (int i = 0; i < read_n; i++) {
+                //         if (buffer[i] == '\r') {
+                //             printf("\nR");
+                //         } else if (buffer[i] == '\n') {
+                //             printf("N\n");
+                //         } else if (!isalnum(buffer[i])) {
+                //             putchar('.');
+                //         } else {
+                //             putchar(buffer[i]);
+                //         }
+                //     }
+                // }
             }
 
             // If there are more bytes to be sent in the response
@@ -588,6 +588,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
 
                     // // printf("Injection with chunked encoding...");
+
                     write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
                     // printf("COMPLETE\n");
                     
@@ -625,6 +626,24 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                     // char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
 
+                    if (strstr(buffer, "HTTP") != NULL) {
+                        printf("\n\n\nBUFFER:\n");
+                        for (int i = 0; i < read_n; i++) {
+                            if (buffer[i] == '\r') {
+                                printf("\\R");
+                            } else if (buffer[i] == '\n') {
+                                printf("\\N\n");
+                            } else {
+                                putchar(buffer[i]);
+                            }
+                        }
+
+                        printf("HEADER:\n%s\n", curr_message->header);
+                    }
+
+                    // if (!found_repeat) {
+                    //     printf("No repeats found\n");
+                    // }
                     
                     // no injection
                     write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
