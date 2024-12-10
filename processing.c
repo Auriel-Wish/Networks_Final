@@ -148,91 +148,168 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
         curr_message->rn_state = END_OF_CHUNK;
         curr_message->source = OTHER_MSG;
         curr_message->read_ended_with_slash_r = false;
+        curr_message->accept_encoding_modified = false;
+        curr_message->content_type_modified = false;
         append(all_messages, curr_message);
+    }
+
+    // Auriel code here
+
+    int buffer_length = strlen(buffer);
+    if (buffer_length < 4) {
+        printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
     }
 
     else {
         // printf("\nNOT NEW MESSAGE\n");
+        if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
+            printf("\nFOUND NEWLINE\n");
+        }
+
+        if (buffer[buffer_length - 1] == '\r') {
+            printf("\nFOUND CARRIAGE RETURN\n");
+        }
     }
 
-    if (!(curr_message->header_complete)) {
-
-        // int buffer_length = strlen(buffer);
-        // if (buffer_length < 4) {
-        //     printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
-        // }
-        // else {
-        //     if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
-        //         printf("\nFOUND NEWLINE\n");
-        //     }
-        //     if (buffer[buffer_length - 1] == '\r') {
-        //         printf("\nFOUND CARRIAGE RETURN\n");
-        //     }
-        // }
-        // printf("\nBUFFER:\n%s\n", buffer);
-
-        char *header_end = strstr(buffer, "\r\n\r\n");
-        char *only_header = NULL;
-        if (header_end != NULL) {
-            curr_message->header_complete = true;
-            int only_header_size = header_end - buffer + 4;
-            only_header = malloc(only_header_size + 1);
-            memcpy(only_header, buffer, only_header_size);
-            only_header[only_header_size] = '\0';
-        }
-        else {
-            // printf("\nELSE CASE\n");
-            only_header = malloc(strlen(buffer) + 1);
-            strcpy(only_header, buffer);
-        }
-
-        curr_message->original_header_length += strlen(only_header);
-        if (curr_message->header == NULL) {
-            curr_message->header = malloc(curr_message->original_header_length + 1);
-            assert(curr_message->header != NULL);
-            strcpy(curr_message->header, only_header);
-        } else {
-            curr_message->header = realloc(curr_message->header, curr_message->original_header_length + 1);
-            assert(curr_message->header != NULL);
-            strcat(curr_message->header, only_header);
-        }
-
-
-        // Request coming from client
-        if (is_request(curr_message->header)) {
-            modify_accept_encoding(curr_message);
-            curr_message->source = CLIENT_MSG;
-        }
-
-        // Response coming from server
-        else {
-            modify_content_type(curr_message);
-            curr_message->source = SERVER_MSG;
-        }
-
-        // printf("Header is currently:\n%s\n\n", curr_message->header);
+    char *header_end = strstr(buffer, "\r\n\r\n");
+    char *only_header = NULL;
+    if (header_end != NULL) {
+        curr_message->header_complete = true;
+        int only_header_size = header_end - buffer + 4;
+        only_header = malloc(only_header_size + 1);
+        memcpy(only_header, buffer, only_header_size);
+        only_header[only_header_size] = '\0';
     }
 
-    // printf("Header is:\n %s\n\n", curr_message->header);
+    else {
+        only_header = malloc(strlen(buffer) + 1);
+        strcpy(only_header, buffer);
+        only_header[strlen(buffer)] = '\0';
+    }
+
+    curr_message->original_header_length += strlen(only_header);
+    if (curr_message->header == NULL) {
+        curr_message->header = malloc(curr_message->original_header_length + 1);
+        assert(curr_message->header != NULL);
+        strcpy(curr_message->header, only_header);
+    } else {
+        curr_message->header = realloc(curr_message->header, strlen(curr_message->header) + strlen(only_header) + 1);
+        assert(curr_message->header != NULL);
+        strcat(curr_message->header, only_header);
+    }
+
+    if (curr_message->content_length == -1) {
+        curr_message->content_length = get_content_length(curr_message->header);
+    }
+
+    if (curr_message->original_content_type == OTHER_ENCODING) {
+        curr_message->original_content_type = get_content_type(curr_message->header);
+    }
+
+    bool msg_is_request = is_request(curr_message->header);
+    if (msg_is_request && !(curr_message->accept_encoding_modified)) {
+        modify_accept_encoding(curr_message);
+    }
+    if (!msg_is_request && !(curr_message->content_type_modified)) {
+        modify_content_type(curr_message);
+    }
 
     return curr_message;
+
+    // // Old version
+    // if (!(curr_message->header_complete)) {
+    //     char *header_end = strstr(buffer, "\r\n\r\n");
+    //     char *only_header = NULL;
+    //     if (header_end != NULL) {
+    //         curr_message->header_complete = true;
+    //         int only_header_size = header_end - buffer + 4;
+    //         only_header = malloc(only_header_size + 1);
+    //         memcpy(only_header, buffer, only_header_size);
+    //         only_header[only_header_size] = '\0';
+    //     }
+    //     else {
+    //         // printf("\nELSE CASE\n");
+    //         only_header = malloc(strlen(buffer) + 1);
+    //         strcpy(only_header, buffer);
+    //     }
+
+    //     curr_message->original_header_length += strlen(only_header);
+    //     if (curr_message->header == NULL) {
+    //         curr_message->header = malloc(curr_message->original_header_length + 1);
+    //         assert(curr_message->header != NULL);
+    //         strcpy(curr_message->header, only_header);
+    //     } else {
+    //         curr_message->header = realloc(curr_message->header, curr_message->original_header_length + 1);
+    //         assert(curr_message->header != NULL);
+    //         strcat(curr_message->header, only_header);
+    //     }
+
+    //     // Request coming from client
+    //     if (is_request(curr_message->header)) {
+    //         modify_accept_encoding(curr_message);
+    //         curr_message->source = CLIENT_MSG;
+    //     }
+
+    //     // Response coming from server
+    //     else {
+    //         modify_content_type(curr_message);
+    //         curr_message->source = SERVER_MSG;
+    //     }
+    // }
+
+    // return curr_message;
+}
+
+int get_content_type(char *header) {
+    const char *content_type_str = "Content-Length:";
+    char *content_type_start = strcasestr(header, content_type_str);
+    if (content_type_start != NULL) {
+        return NORMAL_ENCODING;
+    }
+    const char *transfer_encoding_str = "Transfer-Encoding: chunked";
+    char *transfer_encoding_start = strcasestr(header, transfer_encoding_str);
+    if (transfer_encoding_start != NULL) {
+        return CHUNKED_ENCODING;
+    }
+    return OTHER_ENCODING;
 }
 
 bool is_quora(char *hostname) {
     return (strcmp(hostname, "www.quora.com") == 0);
 }
 
+int get_content_length(char *header) {
+    const char *content_length_str = "Content-Length:";
+    char *content_length_start = strcasestr(header, content_length_str);
+    // printf("\nHEADER IN GET_LENGTH:\n%s\n", header);
+    if (content_length_start) {
+        // printf("\nFOUND CONTENT LENGTH\n");
+        // Extract the content length value
+        char *content_length_value = content_length_start + strlen(content_length_str);
+        while (*content_length_value == ' ') {
+            content_length_value++;
+        }
+        return atoi(content_length_value);
+    }
+    // printf("\nNO CONTENT LENGTH FOUND\n");
+    return -1;
+}
+
+// Liam Version
 void modify_content_type(incomplete_message *msg) {
     if (msg == NULL || msg->header == NULL) {
-        return;
+        return; // Gracefully handle null inputs
     }
 
     const char *content_length_str = "Content-Length:";
     const char *transfer_encoding_str = "Transfer-Encoding: chunked";
+    // const char *transfer_encoding_str = "Transfer-Encoding: chunked\r\n";
+
 
     char *header = msg->header;
     char *content_length_start = strcasestr(header, content_length_str); // Case-insensitive search for Content-Length
 
+    // Remove the Content-Length header if it exists
     if (content_length_start) {
         msg->original_content_type = NORMAL_ENCODING;
 
@@ -292,6 +369,68 @@ void modify_content_type(incomplete_message *msg) {
     }
 }
 
+// // Auriel Version
+// void modify_content_type(incomplete_message *msg) {
+//     if (msg == NULL || msg->header == NULL) {
+//         return; // Gracefully handle null inputs
+//     }
+
+//     const char *content_length_str = "Content-Length:";
+//     const char *transfer_encoding_str = "Transfer-Encoding: chunked\r\n";
+
+//     char *header = msg->header;
+//     char *content_length_start = strcasestr(header, content_length_str); // Case-insensitive search for Content-Length
+
+//     // Remove the Content-Length header if it exists
+//     if (content_length_start) {
+//         char *line_end = strstr(content_length_start, "\r\n");
+//         if (line_end) {
+//             // Calculate the length of the line to remove
+//             memmove(content_length_start, line_end + 2, strlen(line_end + 2) + 1); // Shift remaining data
+//         } else {
+//             // Handle case where Content-Length is the last line in the header
+//             *content_length_start = '\0';
+//         }
+//     }
+
+//     // Check if "Transfer-Encoding: chunked" already exists
+//     char *transfer_encoding_start = strcasestr(header, "Transfer-Encoding:");
+
+//     if (transfer_encoding_start == NULL) {
+//         // Add "Transfer-Encoding: chunked" if it doesn't exist
+//         size_t chunked_line_length = strlen(transfer_encoding_str);
+
+//         // Find the first \r\n after the status line
+//         char *first_crlf = strstr(header, "\r\n");
+//         if (first_crlf) {
+//             size_t status_line_length = first_crlf - header + 2; // +2 includes \r\n
+//             size_t original_header_length = msg->original_header_length;
+//             size_t new_header_length = original_header_length + chunked_line_length;
+
+//             // Allocate memory for the new header
+//             char *new_header = malloc(new_header_length + 1); // +1 for null terminator
+//             if (!new_header) {
+//                 perror("malloc");
+//                 exit(EXIT_FAILURE);
+//             }
+
+//             // Build the new header
+//             strncpy(new_header, header, status_line_length); // Copy the status line
+//             new_header[status_line_length] = '\0'; // Null-terminate temporarily
+//             strcat(new_header, transfer_encoding_str); // Append "Transfer-Encoding: chunked"
+//             strcat(new_header, first_crlf + 2); // Append the rest of the original header
+
+//             // Replace old header with new header
+//             free(msg->header);
+//             msg->header = new_header;
+//             msg->content_type_modified = true;
+
+//             // printf("\nModified content type\n");
+//         }
+//     }
+// }
+
+// Liam Version
 void modify_accept_encoding(incomplete_message *curr_message) {
     char *header = curr_message->header;
     size_t header_length = strlen(header);
@@ -358,6 +497,58 @@ void modify_accept_encoding(incomplete_message *curr_message) {
         i += 2;
     }
 }
+
+// // Auriel version
+// void modify_accept_encoding(incomplete_message *msg) {
+//     if (msg == NULL || msg->header == NULL) {
+//         return; // Handle null inputs gracefully
+//     }
+
+//     // Define the "Accept-Encoding: Identity" string
+//     const char *new_accept_encoding = "Accept-Encoding: Identity\r\n";
+
+//     // Look for the Accept-Encoding header in the existing header
+//     char *header = msg->header;
+//     char *accept_encoding_pos = strstr(header, "Accept-Encoding:");
+    
+//     if (accept_encoding_pos != NULL) {
+//         // Find the end of the Accept-Encoding header line
+//         char *end_of_line = strstr(accept_encoding_pos, "\r\n");
+//         if (end_of_line != NULL) {
+//             // Remove the existing Accept-Encoding header
+//             memmove(accept_encoding_pos, end_of_line + 2, strlen(end_of_line + 2) + 1);
+//         }
+//     }
+
+//     // Find the first occurrence of \r\n
+//     char *first_rn = strstr(header, "\r\n");
+//     if (first_rn != NULL) {
+//         // Insert the new Accept-Encoding: Identity header after the first \r\n
+//         size_t new_header_length = msg->original_header_length + strlen(new_accept_encoding);
+//         char *new_header = malloc(new_header_length + 1); // +1 for the null terminator
+//         if (new_header == NULL) {
+//             fprintf(stderr, "Memory allocation failed\n");
+//             return; // Handle memory allocation failure gracefully
+//         }
+
+//         // Copy the part before the first \r\n
+//         size_t prefix_length = first_rn - header + 2; // Include the \r\n
+//         strncpy(new_header, header, prefix_length);
+//         new_header[prefix_length] = '\0';
+
+//         // Append the new Accept-Encoding header
+//         strcat(new_header, new_accept_encoding);
+
+//         // Append the rest of the original header
+//         strcat(new_header, first_rn + 2);
+
+//         // Update the incomplete_message fields
+//         free(msg->header);
+//         msg->header = new_header;
+//         msg->accept_encoding_modified = true;
+//     }
+// }
+
 
 char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
     char *quora_last_line = "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})})},100)})";

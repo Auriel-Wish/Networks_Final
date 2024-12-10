@@ -347,6 +347,7 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
     // there is no body to be read, we will have an open socket that will never
     // have data sent to it again, that will just remain open.
 
+
     // sending body
     if (read_n > 0 && curr_message->header_sent) {
         // printf("Message with content\n");
@@ -358,6 +359,14 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
                 return false;
+            }
+
+            if (curr_message->content_length_read >= curr_message->content_length) {
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+
+                // TODO: figure out what this case means
+                assert(false);
             }
 
             // printf("NORMAL encoding header\n");
@@ -373,6 +382,14 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
                 return false;
             }
 
+            if (contains_chunk_end(buffer, read_n)) {
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+
+                // TODO: figure out what this case means
+                assert(false);
+            }
+
             // printf("CHUNKED encoding header\n");
         }
 
@@ -384,6 +401,14 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
                 return false;
+            }
+
+            if (contains_chunk_end(buffer, read_n)) {
+                free(curr_message->header);
+                removeNode(all_messages, curr_message);
+
+                // TODO: figure out what this case means
+                assert(false);
             }
 
             // printf("OTHER encoding header\n");
