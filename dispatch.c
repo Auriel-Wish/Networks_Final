@@ -248,9 +248,6 @@ bool handle_fact_check_request(char *buffer, incomplete_message *curr_message,
     int LLM_sockfd, struct sockaddr_un python_addr, Context_T *curr_context, 
     Node **all_messages)
 {
-    // If the message is a fact-check request
-    printf("Trying to fact-check prematurely, exiting\n");
-    assert(false);
 
     char *content_without_header = buffer + curr_message->original_header_length;
     char *end_of_message = strstr(content_without_header, "\"}");
@@ -279,7 +276,7 @@ bool handle_fact_check_request(char *buffer, incomplete_message *curr_message,
     if (num_bytes_from_LLM == -1) {
         perror("Receive failed");
         close(LLM_sockfd);
-        return 1;
+        return false;
     }
 
     char *fact_check_response = "HTTP/1.1 200 OK\r\n"
@@ -306,6 +303,8 @@ bool handle_fact_check_request(char *buffer, incomplete_message *curr_message,
         removeNode(all_messages, curr_message);
         return false;
     }
+
+    return true;
 }
 
 bool handle_general_client_request(incomplete_message *curr_message, int read_n, 
@@ -669,10 +668,10 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     // NOTE: known bug here in this function when curling quora.
                     // things don't work the way I expect
                     int new_buffer_length = 0;
-                    char *new_buffer = "hi";
+                    // char *new_buffer = "hi";
 
 
-                    // char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
+                    char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
 
                     if (strstr(buffer, "HTTP") != NULL) {
                         if (curr_message->original_content_type == CHUNKED_ENCODING) {
@@ -726,6 +725,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                             free(curr_message->header);
                             removeNode(all_messages, curr_message);
+                            
                             free(new_buffer);
                             new_buffer = NULL;
 

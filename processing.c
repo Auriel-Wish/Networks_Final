@@ -796,30 +796,30 @@ char *find_next_rn(char *buffer, int buffer_size) {
 
 char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_size, int *output_buffer_size) {
     
-    printf("\n\n\nPROCESSING CHUNKED\n");
-    printf("Message header:\n%s\n", msg->header);
-    if (msg->header_complete) {
-        printf("Header complete\n");
-    } else {
-        printf("Header not complete\n");
-    }
-    if (msg->rn_state == END_OF_CHUNK) {
-        printf("END OF CHUNK\n");
-    } else if (msg->rn_state == END_OF_HEADER) {
-        printf("END OF HEADER\n");
-    }
-    printf("Actual buffer:\n");
-    for (int i = 0; i < buffer_size; i++) {
-        if (buffer[i] == '\r') {
-            printf("\nR\n");
-        } else if (buffer[i] == '\n') {
-            printf("\nN\n");
-        } else if (!isalnum(buffer[i]) && !isspace(buffer[i]) && buffer[i] != '<' && buffer[i] != '>') {
-            printf(".");
-        } else {
-            printf("%c", buffer[i]);
-        }
-    }
+    // printf("\n\n\nPROCESSING CHUNKED\n");
+    // printf("Message header:\n%s\n", msg->header);
+    // if (msg->header_complete) {
+    //     printf("Header complete\n");
+    // } else {
+    //     printf("Header not complete\n");
+    // }
+    // if (msg->rn_state == END_OF_CHUNK) {
+    //     printf("END OF CHUNK\n");
+    // } else if (msg->rn_state == END_OF_HEADER) {
+    //     printf("END OF HEADER\n");
+    // }
+    // printf("Actual buffer:\n");
+    // for (int i = 0; i < buffer_size; i++) {
+    //     if (buffer[i] == '\r') {
+    //         printf("\nR\n");
+    //     } else if (buffer[i] == '\n') {
+    //         printf("\nN\n");
+    //     } else if (!isalnum(buffer[i]) && !isspace(buffer[i]) && buffer[i] != '<' && buffer[i] != '>') {
+    //         printf(".");
+    //     } else {
+    //         printf("%c", buffer[i]);
+    //     }
+    // }
 
     if (msg->read_ended_with_slash_r) {
         printf("\nread ended with slash r\n");
@@ -907,18 +907,6 @@ char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_siz
     if (new_buffer != NULL) {
         to_send = make_chunk_header_and_end(new_buffer, output_buffer_size);
     }
-    // else {
-    //     *output_buffer_size = 5;
-    //     to_send = malloc(5 + 1);
-    //     strcpy(to_send, "0\r\n\r\n");
-    // }
-
-    // if (contains_chunk_end(to_send, *output_buffer_size)) {
-    //     printf("\n2 BUFFER CONTAINS END OF MESSAGE\n");
-    //     // printf("BUFFER: %s\n", buffer);
-    //     to_send = add_end_of_message_chunk(to_send, output_buffer_size);
-    // }
-
     
     return to_send;
 }
