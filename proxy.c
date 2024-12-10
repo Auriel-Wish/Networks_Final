@@ -23,9 +23,11 @@
 #define PYTHON_SOCKET_PATH "/tmp/python_dgram_socket"
 
 
+void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set, Node **all_messages);
 
-void client_disconnect(int client_filedes, Node **ssl_contexts, 
-    fd_set *active_read_fd_set);
+
+// void client_disconnect(int client_filedes, Node **ssl_contexts, 
+//     fd_set *active_read_fd_set);
 
 int setup_tcp_server_socket(int portno);
 
@@ -130,12 +132,12 @@ int main(int argc, char **argv)
 
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
                     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
-                        client_disconnect(i, &ssl_contexts, &active_read_fd_set);
+                        client_disconnect(i, &ssl_contexts, &active_read_fd_set, &all_messages);
                     }
                 } 
                 else {
                     if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, &all_messages, LLM_sockfd, python_addr)) {
-                        client_disconnect(i, &ssl_contexts, &active_read_fd_set);
+                        client_disconnect(i, &ssl_contexts, &active_read_fd_set, &all_messages);
                     }
                 }
             }
@@ -145,8 +147,20 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
-    // NOTE: Any time a client gets disconnected, messages that were associated with it must be freed
+void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set, Node **all_messages) {
+    // printf("\n\n\n\n");
+    Node *curr = *all_messages;
+    while (curr != NULL) {
+        incomplete_message *msg = (incomplete_message *)curr->data;
+        Node *next = curr->next;
+        if (msg->filedes == filedes) {
+            // printf("REMOVED IN DISCONNECT\n");
+            free(msg->header);
+            removeNode(all_messages, msg);
+        }
+        curr = next;
+    }
+
     // printf("Trying to disconnect a client...");
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
@@ -181,6 +195,43 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     removeNode(ssl_contexts, curr_context);
     // printf("Successfully disconnected client\n");
 }
+
+// void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
+//     // NOTE: Any time a client gets disconnected, messages that were associated with it must be freed
+//     // printf("Trying to disconnect a client...");
+//     FD_CLR(filedes, active_read_fd_set);
+//     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
+    
+//     if (curr_context == NULL) {
+//         curr_context = get_ssl_context_by_server_fd(*ssl_contexts, filedes);
+//     }
+
+//     if (curr_context == NULL) {
+//         return;
+//     }
+
+//     const char *hostname = SSL_get_servername(curr_context->server_ssl, TLSEXT_NAMETYPE_host_name);
+//     if (hostname != NULL) {
+//         char filename[256];
+//         snprintf(filename, sizeof(filename), "%s.crt", hostname);
+//         remove(filename);
+//     }
+
+//     FD_CLR(curr_context->client_fd, active_read_fd_set);
+//     FD_CLR(curr_context->server_fd, active_read_fd_set);
+
+//     SSL_set_quiet_shutdown(curr_context->client_ssl, 1);
+//     SSL_free(curr_context->client_ssl);
+//     SSL_set_quiet_shutdown(curr_context->client_ssl, 1);
+//     SSL_free(curr_context->server_ssl);
+//     close(curr_context->client_fd);
+//     close(curr_context->server_fd);
+
+//     // printf("\nremove node 7\n");
+
+//     removeNode(ssl_contexts, curr_context);
+//     // printf("Successfully disconnected client\n");
+// }
 
 
 int setup_tcp_server_socket(int portno) {
