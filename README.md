@@ -14,7 +14,7 @@ The proxy facilitates secure communication between clients and servers while ena
    - The proxy pretends to be the server requested by the client by dynamically generating SSL certificates. To achieve this:
      - The proxy acts as a certificate authority.
      - It generates and signs server-specific certificates on the fly.
-     - These certificates are trusted by test clients (e.g., `curl` and Firefox) after being added to the Mac system.
+     - These certificates are trusted by test clients (e.g., `curl` and Firefox) after being added to the Mac system or browser's trusted certificates.
 
 2. **Handling Client Requests**:
    - Upon receiving an HTTP CONNECT request, the proxy establishes a connection with the target server and relays data bidirectionally between the client and server.
@@ -36,7 +36,7 @@ The fact-checker is specifically designed for Quora and functions as follows:
    - Clicking this button sends a POST request containing highlighted text for fact-checking.
 
 2. **Processing Requests**:
-   - The proxy appends `?fact-checker=true` to Quora requests and forwards the highlighted text to the Python-based LLM component.
+   - The proxy forwards the highlighted text to the Python-based LLM component.
    - The workflow includes:
      1. Checking if the text makes sense to fact-check using GPT-4o-mini.
      2. Generating a Wikipedia search query based on the text.
@@ -93,9 +93,5 @@ While the current implementation is Quora-specific, the design can be adapted to
 3. Start the proxy and use a compatible browser or tool (e.g., Firefox, `curl`) to access Quora.
 4. Highlight text and click the fact-check button to initiate fact-checking.
 
-For more details, see the documentation in the repository.
-
----
-
 ## Authors
-Developed by a team of researchers and engineers to explore the integration of LLMs into real-time fact-checking workflows.
+Developed by Auriel Wish and Liam Drew
