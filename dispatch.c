@@ -515,9 +515,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
     char buffer_arr[BUFFER_SIZE + 1];
     char *buffer = buffer_arr;
-    printf("Reading...");
+    // printf("Reading...");
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
-    printf("DONE reading\n");
+    // printf("DONE reading\n");
     buffer_arr[read_n] = '\0';
 
     int write_n;

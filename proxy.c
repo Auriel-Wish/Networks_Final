@@ -79,14 +79,14 @@ int main(int argc, char **argv)
     while (true) {
         read_fd_set = active_read_fd_set;
 
-        fprintf(stderr, "SELECT blocking...");
+        // fprintf(stderr, "SELECT blocking...");
 
         if (select(max_fd, &read_fd_set, NULL, NULL, &TIMEOUT) < 0) {
             perror("ERROR with select");
             continue;
         }
 
-        fprintf(stderr, "DONE blocking\n");
+        // fprintf(stderr, "DONE blocking\n");
 
         /* Service all sockets with input pending */
         for (int i = 0; i < max_fd; ++i) {
