@@ -135,208 +135,235 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
         curr_message->original_content_type = OTHER_ENCODING;
         curr_message->rn_state = END_OF_CHUNK;
         curr_message->read_ended_with_slash_r = false;
+        curr_message->accept_encoding_modified = false;
+        curr_message->content_type_modified = false;
         append(all_messages, curr_message);
     }
 
+    int buffer_length = strlen(buffer);
+    if (buffer_length < 4) {
+        printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
+    }
     else {
-        // printf("\nNOT NEW MESSAGE\n");
+        if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
+            printf("\nFOUND NEWLINE\n");
+        }
+        if (buffer[buffer_length - 1] == '\r') {
+            printf("\nFOUND CARRIAGE RETURN\n");
+        }
+    }
+    // printf("\nBUFFER:\n%s\n", buffer);
+
+    char *header_end = strstr(buffer, "\r\n\r\n");
+    char *only_header = NULL;
+    if (header_end != NULL) {
+        curr_message->header_complete = true;
+        int only_header_size = header_end - buffer + 4;
+        only_header = malloc(only_header_size + 1);
+        memcpy(only_header, buffer, only_header_size);
+        only_header[only_header_size] = '\0';
+    }
+    else {
+        only_header = malloc(strlen(buffer) + 1);
+        strcpy(only_header, buffer);
+        only_header[strlen(buffer)] = '\0';
     }
 
-    if (!(curr_message->header_complete)) {
-
-        // int buffer_length = strlen(buffer);
-        // if (buffer_length < 4) {
-        //     printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
-        // }
-        // else {
-        //     if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
-        //         printf("\nFOUND NEWLINE\n");
-        //     }
-        //     if (buffer[buffer_length - 1] == '\r') {
-        //         printf("\nFOUND CARRIAGE RETURN\n");
-        //     }
-        // }
-        // printf("\nBUFFER:\n%s\n", buffer);
-
-        char *header_end = strstr(buffer, "\r\n\r\n");
-        char *only_header = NULL;
-        if (header_end != NULL) {
-            curr_message->header_complete = true;
-            int only_header_size = header_end - buffer + 4;
-            only_header = malloc(only_header_size + 1);
-            memcpy(only_header, buffer, only_header_size);
-            only_header[only_header_size] = '\0';
-        }
-        else {
-            // printf("\nELSE CASE\n");
-            only_header = malloc(strlen(buffer) + 1);
-            strcpy(only_header, buffer);
-        }
-
-        curr_message->original_header_length += strlen(only_header);
-        if (curr_message->header == NULL) {
-            curr_message->header = malloc(curr_message->original_header_length + 1);
-            assert(curr_message->header != NULL);
-            strcpy(curr_message->header, only_header);
-        } else {
-            curr_message->header = realloc(curr_message->header, curr_message->original_header_length + 1);
-            assert(curr_message->header != NULL);
-            strcat(curr_message->header, only_header);
-        }
-
-        if (is_request(curr_message->header)) {
-            modify_accept_encoding(curr_message);
-        }
-        else {
-            modify_content_type(curr_message);
-        }
-
-        // printf("Header is currently:\n%s\n\n", curr_message->header);
+    curr_message->original_header_length += strlen(only_header);
+    if (curr_message->header == NULL) {
+        curr_message->header = malloc(curr_message->original_header_length + 1);
+        assert(curr_message->header != NULL);
+        strcpy(curr_message->header, only_header);
+    } else {
+        curr_message->header = realloc(curr_message->header, strlen(curr_message->header) + strlen(only_header) + 1);
+        assert(curr_message->header != NULL);
+        strcat(curr_message->header, only_header);
     }
 
-    // printf("Header is:\n %s\n\n", curr_message->header);
+    // printf("\n\n\nFiledes: %d\n", filedes);
+    // printf("\nHEADER:\n%s\n", curr_message->header);
+    // if (curr_message->header_complete) {
+    //     printf("HEADER COMPLETE\n");
+    // }
+    // else {
+    //     printf("HEADER INCOMPLETE\n");
+    // }
+    // if (curr_message->original_content_type == NORMAL_ENCODING) {
+    //     printf("NORMAL ENCODING\n");
+    // }
+    // else if (curr_message->original_content_type == CHUNKED_ENCODING) {
+    //     printf("CHUNKED ENCODING\n");
+    // }
+    // else {
+    //     printf("OTHER ENCODING\n");
+    // }
+
+    if (curr_message->content_length == -1) {
+        curr_message->content_length = get_content_length(curr_message->header);
+    }
+    if (curr_message->original_content_type == OTHER_ENCODING) {
+        curr_message->original_content_type = get_content_type(curr_message->header);
+    }
+
+    bool msg_is_request = is_request(curr_message->header);
+
+    if (msg_is_request && !(curr_message->accept_encoding_modified)) {
+        modify_accept_encoding(curr_message);
+    }
+    if (!msg_is_request && !(curr_message->content_type_modified)) {
+        modify_content_type(curr_message);
+    }
 
     return curr_message;
+}
+
+int get_content_type(char *header) {
+    const char *content_type_str = "Content-Length:";
+    char *content_type_start = strcasestr(header, content_type_str);
+    if (content_type_start != NULL) {
+        return NORMAL_ENCODING;
+    }
+
+    const char *transfer_encoding_str = "Transfer-Encoding: chunked";
+    char *transfer_encoding_start = strcasestr(header, transfer_encoding_str);
+    if (transfer_encoding_start != NULL) {
+        return CHUNKED_ENCODING;
+    }
+
+    return OTHER_ENCODING;
 }
 
 bool is_quora(char *hostname) {
     return (strcmp(hostname, "www.quora.com") == 0);
 }
 
-void modify_content_type(incomplete_message *msg) {
-    if (msg == NULL || msg->header == NULL) {
-        return;
-    }
-
+int get_content_length(char *header) {
     const char *content_length_str = "Content-Length:";
-    const char *transfer_encoding_str = "Transfer-Encoding: chunked";
-
-    char *header = msg->header;
-    char *content_length_start = strcasestr(header, content_length_str); // Case-insensitive search for Content-Length
+    char *content_length_start = strcasestr(header, content_length_str);
+    // printf("\nHEADER IN GET_LENGTH:\n%s\n", header);
 
     if (content_length_start) {
-        msg->original_content_type = NORMAL_ENCODING;
-
+        // printf("\nFOUND CONTENT LENGTH\n");
         // Extract the content length value
         char *content_length_value = content_length_start + strlen(content_length_str);
         while (*content_length_value == ' ') {
             content_length_value++;
         }
-        msg->content_length = atoi(content_length_value);
+        return atoi(content_length_value);
+    }
 
-        // Find the end of the Content-Length line
+    // printf("\nNO CONTENT LENGTH FOUND\n");
+
+    return -1;
+}
+
+void modify_content_type(incomplete_message *msg) {
+    if (msg == NULL || msg->header == NULL) {
+        return; // Gracefully handle null inputs
+    }
+
+    const char *content_length_str = "Content-Length:";
+    const char *transfer_encoding_str = "Transfer-Encoding: chunked\r\n";
+
+    char *header = msg->header;
+    char *content_length_start = strcasestr(header, content_length_str); // Case-insensitive search for Content-Length
+
+    // Remove the Content-Length header if it exists
+    if (content_length_start) {
         char *line_end = strstr(content_length_start, "\r\n");
         if (line_end) {
-            // Remove the Content-Length line
-            // size_t line_length = line_end + 2 - content_length_start;
-            memmove(content_length_start, line_end + 2, strlen(line_end + 2) + 1);
+            // Calculate the length of the line to remove
+            memmove(content_length_start, line_end + 2, strlen(line_end + 2) + 1); // Shift remaining data
         } else {
-            // Handle case where Content-Length is the last line
+            // Handle case where Content-Length is the last line in the header
             *content_length_start = '\0';
         }
     }
 
-    // Check if Transfer-Encoding: chunked already exists
-    char *transfer_encoding_start = strcasestr(header, transfer_encoding_str);
-    if (transfer_encoding_start) {
-        msg->original_content_type = CHUNKED_ENCODING;
-    }
+    // Check if "Transfer-Encoding: chunked" already exists
+    char *transfer_encoding_start = strcasestr(header, "Transfer-Encoding:");
 
-    if (msg->original_content_type != CHUNKED_ENCODING) {
-        // If Transfer-Encoding: chunked is not present, add it
-        const char *chunked_line = "\r\nTransfer-Encoding: chunked";
-        size_t chunked_line_length = strlen(chunked_line);
+    if (transfer_encoding_start == NULL) {
+        // Add "Transfer-Encoding: chunked" if it doesn't exist
+        size_t chunked_line_length = strlen(transfer_encoding_str);
 
-        // Find the end of the header
-        char *header_end = strstr(header, "\r\n\r\n");
-        if (header_end) {
-            size_t header_prefix_length = header_end - header;
-            size_t new_header_length = header_prefix_length + chunked_line_length + 4; // +4 for \r\n\r\n
+        // Find the first \r\n after the status line
+        char *first_crlf = strstr(header, "\r\n");
+        if (first_crlf) {
+            size_t status_line_length = first_crlf - header + 2; // +2 includes \r\n
+            size_t original_header_length = msg->original_header_length;
+            size_t new_header_length = original_header_length + chunked_line_length;
 
             // Allocate memory for the new header
-            char *new_header = malloc(new_header_length + 1);
+            char *new_header = malloc(new_header_length + 1); // +1 for null terminator
             if (!new_header) {
                 perror("malloc");
                 exit(EXIT_FAILURE);
             }
 
             // Build the new header
-            strncpy(new_header, header, header_prefix_length); // Copy part before \r\n\r\n
-            new_header[header_prefix_length] = '\0'; // Null-terminate temporarily
-            strcat(new_header, chunked_line); // Append Transfer-Encoding: chunked
-            strcat(new_header, "\r\n\r\n"); // Append \r\n\r\n
+            strncpy(new_header, header, status_line_length); // Copy the status line
+            new_header[status_line_length] = '\0'; // Null-terminate temporarily
+            strcat(new_header, transfer_encoding_str); // Append "Transfer-Encoding: chunked"
+            strcat(new_header, first_crlf + 2); // Append the rest of the original header
 
             // Replace old header with new header
             free(msg->header);
             msg->header = new_header;
+            msg->content_type_modified = true;
+
+            // printf("\nModified content type\n");
         }
     }
 }
 
-void modify_accept_encoding(incomplete_message *curr_message) {
-    char *header = curr_message->header;
-    size_t header_length = strlen(header);
-    size_t i = 0;
+void modify_accept_encoding(incomplete_message *msg) {
+    if (msg == NULL || msg->header == NULL) {
+        return; // Handle null inputs gracefully
+    }
 
-    // The new Accept-Encoding line
-    const char *new_line = "Accept-Encoding: identity\r\n";
-    size_t new_line_length = strlen(new_line);
+    // Define the "Accept-Encoding: Identity" string
+    const char *new_accept_encoding = "Accept-Encoding: Identity\r\n";
 
-    while (i < header_length) {
-        // Find the end of the current line
-        size_t line_start = i;
-        while (i < header_length - 1 && !(header[i] == '\r' && header[i + 1] == '\n')) {
-            i++;
+    // Look for the Accept-Encoding header in the existing header
+    char *header = msg->header;
+    char *accept_encoding_pos = strstr(header, "Accept-Encoding:");
+    
+    if (accept_encoding_pos != NULL) {
+        // Find the end of the Accept-Encoding header line
+        char *end_of_line = strstr(accept_encoding_pos, "\r\n");
+        if (end_of_line != NULL) {
+            // Remove the existing Accept-Encoding header
+            memmove(accept_encoding_pos, end_of_line + 2, strlen(end_of_line + 2) + 1);
+        }
+    }
+
+    // Find the first occurrence of \r\n
+    char *first_rn = strstr(header, "\r\n");
+    if (first_rn != NULL) {
+        // Insert the new Accept-Encoding: Identity header after the first \r\n
+        size_t new_header_length = msg->original_header_length + strlen(new_accept_encoding);
+        char *new_header = malloc(new_header_length + 1); // +1 for the null terminator
+        if (new_header == NULL) {
+            fprintf(stderr, "Memory allocation failed\n");
+            return; // Handle memory allocation failure gracefully
         }
 
-        if (i >= header_length - 1) {
-            // End of header reached or malformed header
-            break;
-        }
+        // Copy the part before the first \r\n
+        size_t prefix_length = first_rn - header + 2; // Include the \r\n
+        strncpy(new_header, header, prefix_length);
+        new_header[prefix_length] = '\0';
 
-        // Now, header[line_start .. i-1] is the current line (excluding "\r\n")
-        size_t line_length = i - line_start;
+        // Append the new Accept-Encoding header
+        strcat(new_header, new_accept_encoding);
 
-        // Check if the line contains ':'
-        char *colon = memchr(&header[line_start], ':', line_length);
-        if (colon) {
-            size_t field_name_length = colon - &header[line_start];
+        // Append the rest of the original header
+        strcat(new_header, first_rn + 2);
 
-            // Remove any trailing whitespace from field name
-            while (field_name_length > 0 &&
-                   isspace((unsigned char)header[line_start + field_name_length - 1])) {
-                field_name_length--;
-            }
-
-            // Compare field name to "Accept-Encoding" case-insensitively
-            if (field_name_length == strlen("Accept-Encoding") &&
-                strncasecmp(&header[line_start], "Accept-Encoding", field_name_length) == 0) {
-                // Found the Accept-Encoding header
-                size_t old_line_length = (i + 2) - line_start; // Including "\r\n"
-
-                ssize_t diff = (ssize_t)new_line_length - (ssize_t)old_line_length;
-
-                if (diff != 0) {
-                    // Shift data to accommodate new line length
-                    memmove(&header[line_start + new_line_length],
-                            &header[line_start + old_line_length],
-                            header_length - (line_start + old_line_length));
-                }
-
-                // Copy new line into header
-                memcpy(&header[line_start], new_line, new_line_length);
-
-                // Update header length and null-terminate
-                header_length += diff;
-                header[header_length] = '\0';
-
-                // Header updated; exit the loop
-                break;
-            }
-        }
-
-        // Move past the "\r\n"
-        i += 2;
+        // Update the incomplete_message fields
+        free(msg->header);
+        msg->header = new_header;
+        msg->accept_encoding_modified = true;
     }
 }
 
@@ -653,11 +680,10 @@ bool is_request(char *buffer) {
         "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH", "CONNECT", "TRACE"
     };
 
-    // Iterate through all valid methods and check if the buffer starts with one of them
+    // Iterate through all valid methods and check if the buffer contains one of them
     size_t num_methods = sizeof(methods) / sizeof(methods[0]);
     for (size_t i = 0; i < num_methods; i++) {
-        size_t method_len = strlen(methods[i]);
-        if (strncmp(buffer, methods[i], method_len) == 0) {
+        if (strncmp(buffer, methods[i], strlen(methods[i])) == 0) { // Check if buffer starts with the method
             return true;
         }
     }
@@ -665,8 +691,8 @@ bool is_request(char *buffer) {
     return false;
 }
 
-bool request_might_have_data(const char *method) {
-    if (method == NULL) {
+bool request_might_have_data(const char *buffer) {
+    if (buffer == NULL) {
         return false;
     }
 
@@ -675,10 +701,10 @@ bool request_might_have_data(const char *method) {
         "POST", "PUT", "PATCH"
     };
 
-    // Iterate through methods that have data
+    // Iterate through methods that may have a body
     size_t num_methods = sizeof(methods_with_data) / sizeof(methods_with_data[0]);
     for (size_t i = 0; i < num_methods; i++) {
-        if (strncmp(method, methods_with_data[i], strlen(methods_with_data[i])) == 0) {
+        if (strstr(buffer, methods_with_data[i]) != NULL) { // Check if method is in the buffer
             return true;
         }
     }

@@ -24,8 +24,7 @@
 
 
 
-void client_disconnect(int client_filedes, Node **ssl_contexts, 
-    fd_set *active_read_fd_set);
+void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set, Node **all_messages);
 
 int setup_tcp_server_socket(int portno);
 
@@ -74,6 +73,8 @@ int main(int argc, char **argv)
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
 
+    // Node *all_requests = NULL;
+    // Node *all_responses = NULL;
     Node *all_messages = NULL;
 
     while (true) {
@@ -130,12 +131,12 @@ int main(int argc, char **argv)
 
                 else if (client_or_server_fd(ssl_contexts, i) == SERVER_FD) {
                     if (!read_server_response(i, &ssl_contexts, &all_messages)) {
-                        client_disconnect(i, &ssl_contexts, &active_read_fd_set);
+                        client_disconnect(i, &ssl_contexts, &active_read_fd_set, &all_messages);
                     }
                 } 
                 else {
                     if (!read_client_request(i, &ssl_contexts, &active_read_fd_set, &max_fd, &all_messages, LLM_sockfd, python_addr)) {
-                        client_disconnect(i, &ssl_contexts, &active_read_fd_set);
+                        client_disconnect(i, &ssl_contexts, &active_read_fd_set, &all_messages);
                     }
                 }
             }
@@ -145,7 +146,19 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
+void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set, Node **all_messages) {
+    printf("\n\n\n\n");
+    Node *curr = *all_messages;
+    while (curr != NULL) {
+        incomplete_message *msg = (incomplete_message *)curr->data;
+        Node *next = curr->next;
+        if (msg->filedes == filedes) {
+            // printf("REMOVED IN DISCONNECT\n");
+            free(msg->header);
+            removeNode(all_messages, msg);
+        }
+        curr = next;
+    }
 
     // printf("Trying to disconnect a client...");
     FD_CLR(filedes, active_read_fd_set);

@@ -36,6 +36,8 @@ typedef struct {
     } rn_state;
     char *header;
     int original_header_length;
+    bool accept_encoding_modified;
+    bool content_type_modified;
     bool header_sent;
     bool read_ended_with_slash_r;
 } incomplete_message;

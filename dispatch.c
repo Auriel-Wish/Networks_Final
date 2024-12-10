@@ -301,6 +301,7 @@ bool handle_fact_check_request(char *buffer, incomplete_message *curr_message,
 
     // printf("Wrote fact check response to client\n");
     if (write_n <= 0) {
+        // printf("\n1\n");
         free(curr_message->header);
         removeNode(all_messages, curr_message);
         return false;
@@ -321,6 +322,7 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
             curr_message->original_header_length);
 
         if (write_n <= 0) {
+        // printf("\n2\n");
             free(curr_message->header);
             removeNode(all_messages, curr_message);
             return false;
@@ -336,6 +338,8 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         read_n -= curr_part_of_header_length;
 
         if (!request_might_have_data(curr_message->header)) {
+        // printf("\n3\n");
+
             free(curr_message->header);
             removeNode(all_messages, curr_message);
         }
@@ -350,15 +354,43 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
     if (read_n > 0 && curr_message->header_sent) {
         if (curr_message->original_content_type != NORMAL_ENCODING) {
 
+            if (strstr(buffer, "HTTP") != NULL) {
+                if (curr_message->original_content_type == CHUNKED_ENCODING) {
+                    printf("\norignal content type: CHUNKED\n");
+                }
+                else if (curr_message->original_content_type == OTHER_ENCODING) {
+                    printf("\norignal content type: OTHER\n");
+                }
+                printf("\nBUFFER FROM CLIENT NOT NORMAL:\n");
+                for (int i = 0; i < read_n; i++) {
+                    if (buffer[i] == '\r') {
+                        printf("\\R");
+                    } else if (buffer[i] == '\n') {
+                        printf("\\N\n");
+                    } else {
+                        putchar(buffer[i]);
+                    }
+                }
+
+                printf("\nHEADER FROM CLIENT:\n%s\n", curr_message->header);
+
+                printf("content length: %d\n", curr_message->content_length);
+                printf("content length read: %d\n", curr_message->content_length_read);
+                printf("getting content length now: %d\n", get_content_length(curr_message->header));
+            }
+
             write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
             if (write_n <= 0) {
+        // printf("\n4\n");
+
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
                 return false;
             }
 
             if (contains_chunk_end(buffer, read_n)) {
+        // printf("\n5\n");
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
             }
@@ -367,19 +399,44 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         else {
             write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
+            if (strstr(buffer, "HTTP") != NULL) {
+                if (curr_message->original_content_type == CHUNKED_ENCODING) {
+                    printf("\norignal content type: CHUNKED\n");
+                }
+                else if (curr_message->original_content_type == OTHER_ENCODING) {
+                    printf("\norignal content type: OTHER\n");
+                }
+                else {
+                    printf("\norignal content type: NORMAL\n");
+                }
+                printf("\n\n\nBUFFER FROM CLIENT NORMAL:\n");
+                for (int i = 0; i < read_n; i++) {
+                    if (buffer[i] == '\r') {
+                        printf("\\R");
+                    } else if (buffer[i] == '\n') {
+                        printf("\\N\n");
+                    } else {
+                        putchar(buffer[i]);
+                    }
+                }
+
+                printf("\nHEADER FROM CLIENT:\n%s\n", curr_message->header);
+
+                printf("content length: %d\n", curr_message->content_length);
+                printf("content length read: %d\n", curr_message->content_length_read);
+                printf("getting content length now: %d\n", get_content_length(curr_message->header));
+            }
+
             if (write_n <= 0) {
+        // printf("\n6\n");
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
                 return false;
             }
 
-            if (curr_message->original_content_type == CHUNKED_ENCODING) {
-                if (contains_chunk_end(buffer, read_n)) {
-                    free(curr_message->header);
-                    removeNode(all_messages, curr_message);
-                }
-            } else if (curr_message->original_content_type == NORMAL_ENCODING 
-                       && curr_message->content_length_read >= curr_message->content_length) {
+            if (curr_message->content_length_read >= curr_message->content_length) {
+        // printf("\n7\n");
+
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
             }
@@ -500,32 +557,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
             
             // If the response header hasn't been sent to the client yet, send it
             if (!(curr_message->header_sent) && curr_message->header_complete) {
-                // printf("Header length %d\n", header_length);
-                // printf("In the struct is %d\n", curr_message->original_header_length);
-                // printf("About to send the HEADER to client\n\n");
-                // printf("length of header: %d\n", strlen(curr_message->header));
-                // printf("%s\n", curr_message->header);
-                FILE *header_file = fopen("header.txt", "w");
-                if (header_file == NULL) {
-                    perror("Failed to open header.txt");
-                    return false;
-                }
-
-                // printf("\n\nHEADER SENT:\n");
-                // for (size_t i = 0; i < strlen(curr_message->header); i++) {
-                //     if (curr_message->header[i] == '\r') {
-                //         printf("\nR");
-                //     } else if (curr_message->header[i] == '\n') {
-                //         printf("N\n");
-                //     } else if (!isalnum(curr_message->header[i])) {
-                //         putchar('.');
-                //     } else {
-                //         putchar(curr_message->header[i]);
-                //     }
-                // }
-
-                fclose(header_file);
-
                 //maybe we put this in the struct when we clean up
                 int changed_header_len = strlen(curr_message->header);
                 write_n = SSL_write(curr_context->client_ssl, curr_message->header, changed_header_len);
@@ -536,7 +567,8 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                         return true; // Keep the connection open
                     } else {
-                        // printf("\nremove node 1\n");
+                                // printf("\n8\n");
+
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
@@ -551,21 +583,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 curr_message->content_length_read -= curr_message->original_header_length;
                 buffer += curr_part_of_header_length;
                 read_n -= curr_part_of_header_length;
-
-                // if (read_n > 0) {
-                //     printf("\n\n\nBUFFER LEFTOVER:\n");
-                //     for (int i = 0; i < read_n; i++) {
-                //         if (buffer[i] == '\r') {
-                //             printf("\nR");
-                //         } else if (buffer[i] == '\n') {
-                //             printf("N\n");
-                //         } else if (!isalnum(buffer[i])) {
-                //             putchar('.');
-                //         } else {
-                //             putchar(buffer[i]);
-                //         }
-                //     }
-                // }
             }
 
             // If there are more bytes to be sent in the response
@@ -573,11 +590,40 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                 // Normal encoding (with content length)
                 if (curr_message->original_content_type == NORMAL_ENCODING) {
-                int chunk_data_length = 0;
+                    if (strstr(buffer, "HTTP") != NULL) {
+                        if (curr_message->original_content_type == CHUNKED_ENCODING) {
+                    printf("\norignal content type: CHUNKED\n");
+                }
+                else if (curr_message->original_content_type == OTHER_ENCODING) {
+                    printf("\norignal content type: OTHER\n");
+                }
+                else {
+                    printf("\norignal content type: NORMAL\n");
+                }
+                        printf("\n\n\nBUFFER FROM SERVER NORMAL:\n");
+                        for (int i = 0; i < read_n; i++) {
+                            if (buffer[i] == '\r') {
+                                printf("\\R");
+                            } else if (buffer[i] == '\n') {
+                                printf("\\N\n");
+                            } else {
+                                putchar(buffer[i]);
+                            }
+                        }
+
+                        printf("\nHEADER FROM SERVER:\n%s\n", curr_message->header);
+
+                        printf("content length: %d\n", curr_message->content_length);
+                        printf("content length read: %d\n", curr_message->content_length_read);
+                        printf("getting content length now: %d\n", get_content_length(curr_message->header));
+                    }
+                    
+                    int chunk_data_length = 0;
                     char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
 
                     if (chunked_data == NULL) {
-                        // printf("\nremove node 2\n");
+                                // printf("\n9\n");
+
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
@@ -603,7 +649,8 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                             return true; // Keep the connection open
                         } else {
-                            // printf("\nremove node 3\n");
+                                // printf("\n10\n");
+
                             free(curr_message->header);
                             removeNode(all_messages, curr_message);
                             return false;
@@ -612,6 +659,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                     if (curr_message->content_length_read >= curr_message->content_length) {
                         // printf("\nremove node 4\n");
+                                // printf("\n11\n");
                         
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
@@ -627,7 +675,16 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     // char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
 
                     if (strstr(buffer, "HTTP") != NULL) {
-                        printf("\n\n\nBUFFER:\n");
+                        if (curr_message->original_content_type == CHUNKED_ENCODING) {
+                    printf("\n\n\norignal content type: CHUNKED\n");
+                }
+                else if (curr_message->original_content_type == OTHER_ENCODING) {
+                    printf("\n\n\norignal content type: OTHER\n");
+                }
+                else {
+                    printf("\n\n\norignal content type: NORMAL\n");
+                }
+                        printf("BUFFER FROM SERVER CHUNKED:\n");
                         for (int i = 0; i < read_n; i++) {
                             if (buffer[i] == '\r') {
                                 printf("\\R");
@@ -637,24 +694,23 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                                 putchar(buffer[i]);
                             }
                         }
+                        printf("content length: %d\n", curr_message->content_length);
+                        printf("content length read: %d\n", curr_message->content_length_read);
+                        printf("getting content length now: %d\n", get_content_length(curr_message->header));
 
-                        printf("HEADER:\n%s\n", curr_message->header);
+                        printf("\nHEADER FROM SERVER:\n%s\n", curr_message->header);
                     }
-
-                    // if (!found_repeat) {
-                    //     printf("No repeats found\n");
-                    // }
                     
                     // no injection
-                    write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
+                    // write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
 
                     // printf("Before Injection\n%s\n", new_buffer);
 
                     // injection
-                    // int to_send_length = new_buffer_length;
-                    // char *to_send = inject_script_into_chunked_html(new_buffer, &to_send_length);
+                    int to_send_length = new_buffer_length;
+                    char *to_send = inject_script_into_chunked_html(new_buffer, &to_send_length);
 
-                    // write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
+                    write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
 
                     if (write_n <= 0) {
                         // if we just get rid of this data, won't that data just be lost?
@@ -665,7 +721,8 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                             return true; // Keep the connection open
                         } else {
-                            // printf("\nremove node 5\n");
+                                // printf("\n12\n");
+
 
                             free(curr_message->header);
                             removeNode(all_messages, curr_message);
@@ -676,12 +733,25 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                         }
                     }
 
+                    // Injection
                     if (contains_chunk_end(new_buffer, new_buffer_length)) {
+                                // printf("\n13\n");
+
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
-
                     }
+
+                    // no injection
+                    // if (contains_chunk_end(buffer, read_n)) {
+                    //             // printf("\n13\n");
+
+                    //     free(curr_message->header);
+                    //     removeNode(all_messages, curr_message);
+                    //     return false;
+
+                    // }
+
 
                     // free(new_buffer);
                     new_buffer = NULL;

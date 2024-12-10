@@ -39,5 +39,9 @@ bool request_might_have_data(const char *method);
 
 bool is_quora(char *hostname);
 
+int get_content_length(char *header);
+
+int get_content_type(char *header);
+
 #endif
 
