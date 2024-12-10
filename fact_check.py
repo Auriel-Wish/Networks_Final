@@ -32,7 +32,6 @@ def search_wikipedia(query, max_results):
         articles_content = {}
         for title in search_results:
             try:
-                # print(f"Fetching content for: {title}")
                 # Get the full article text
                 content = wikipedia.page(title, auto_suggest=False).content
                 articles_content[title] = content
@@ -49,7 +48,6 @@ def search_wikipedia(query, max_results):
 
 def make_LLM_request(request, url):
     try:
-        # print(f"Initiating request: {request}")
         response = requests.post(url, json=request)
 
         if response.status_code == 200:
@@ -172,9 +170,6 @@ def main():
                 n = sock.sendto("An error occurred while fact checking.".encode(), addr)
                 continue
             to_fact_check = data['text']
-            # json_payload = {
-            #     "factCheck": "UNKNOWN ERROR"
-            # }
             to_send = None
 
             extra_text = to_fact_check[:100]
@@ -194,9 +189,7 @@ def main():
             else:
                 to_send = f"{extra_text}Statement does not make sense to fact check"
             
-            # json_output = json.dumps(json_payload, ensure_ascii=False)
             print(f"Sending to proxy:\n{to_send}")
-            # data_to_send = json_output.encode('utf-8')
             n = sock.sendto(to_send.encode('utf-8'), addr)
 
     finally:

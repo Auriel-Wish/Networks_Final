@@ -22,14 +22,11 @@
 #define SOCKET_PATH "/tmp/c_dgram_socket"
 #define PYTHON_SOCKET_PATH "/tmp/python_dgram_socket"
 
-
-
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set, Node **all_messages);
 
 int setup_tcp_server_socket(int portno);
 
 int initialize_LLM_communication(struct sockaddr_un *python_addr);
-
 
 
 int main(int argc, char **argv)
@@ -80,18 +77,13 @@ int main(int argc, char **argv)
     while (true) {
         read_fd_set = active_read_fd_set;
 
-        // fprintf(stderr, "SELECT blocking...");
-
         if (select(max_fd, &read_fd_set, NULL, NULL, &TIMEOUT) < 0) {
             perror("ERROR with select");
             continue;
         }
 
-        // fprintf(stderr, "DONE blocking\n");
-
         /* Service all sockets with input pending */
         for (int i = 0; i < max_fd; ++i) {
-            // printf("Checking socket %d\n", i);
             /* READING sockets */
             if (FD_ISSET(i, &read_fd_set)) {
                 if (i == parentfd) {
@@ -121,9 +113,6 @@ int main(int argc, char **argv)
                         perror("Error on inet_ntoa");
                     }
 
-                    // printf("Server established connection with %s (%s)\n\n",
-                    //  hostp->h_name, hostaddrp);
-
                     /* Adding new connection request to active socket set */
                     FD_SET(new_fd, &active_read_fd_set);
                     set_max_fd(new_fd, &max_fd);
@@ -147,20 +136,17 @@ int main(int argc, char **argv)
 }
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set, Node **all_messages) {
-    printf("\n\n\n\n");
     Node *curr = *all_messages;
     while (curr != NULL) {
         incomplete_message *msg = (incomplete_message *)curr->data;
         Node *next = curr->next;
         if (msg->filedes == filedes) {
-            // printf("REMOVED IN DISCONNECT\n");
             free(msg->header);
             removeNode(all_messages, msg);
         }
         curr = next;
     }
 
-    // printf("Trying to disconnect a client...");
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);
     
@@ -189,12 +175,9 @@ void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_
     close(curr_context->client_fd);
     close(curr_context->server_fd);
 
-    // printf("\nremove node 7\n");
 
     removeNode(ssl_contexts, curr_context);
-    // printf("Successfully disconnected client\n");
 }
-
 
 int setup_tcp_server_socket(int portno) {
     struct sockaddr_in serveraddr;

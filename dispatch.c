@@ -17,25 +17,6 @@
 #include <zlib.h>
 #include <fcntl.h>
 
-#define DECOMPRESSED_BUFFER_SIZE 8192 // Adjust this as needed
-#define CHUNK 16384
-
-void set_socket_timeout(int fd, long timeout_millisecs) {
-    struct timeval timeout;
-    timeout.tv_sec = timeout_millisecs / 1000;           // Whole seconds
-    timeout.tv_usec = (timeout_millisecs % 1000) * 1000; // Remainder microsecs
-    // Set receive timeout
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Failed to set receive timeout");
-        fprintf(stderr, "setsockopt failed: %s\n", strerror(errno));
-    }
-    // Set send timeout
-    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Failed to set send timeout");
-        fprintf(stderr, "setsockopt failed: %s\n", strerror(errno));
-    }
-}
-
 void set_max_fd(int new_fd, int *max_fd) {
     if (new_fd + 1 > *max_fd) {
         *max_fd = new_fd + 1;
@@ -95,8 +76,6 @@ void configure_ssl_context(SSL_CTX *ctx, char *hostname) {
 }
 
 void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context) {
-    // printf("\nConnecting to %s:%d..", hostname, port);
-
     // Use the TLS client method
     const SSL_METHOD *method = TLS_client_method();
     SSL_CTX *ctx = SSL_CTX_new(method);
@@ -157,8 +136,6 @@ void open_new_conn_to_server(char *hostname, int port, Context_T **curr_context)
 
     (*curr_context)->server_fd = server_fd;
     (*curr_context)->server_ssl = server_ssl;
-
-    // printf("CONNECTED\n");
 }
 
 bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_set, int *max_fd) {
@@ -176,7 +153,7 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
         assert(false);
     }
 
-    buffer[nbytes] = '\0'; //Null-terminating the buffer
+    buffer[nbytes] = '\0';
 
     // Step 2: Check if it’s a CONNECT request
     if (strncmp(buffer, "CONNECT", 7) == 0) {
@@ -206,30 +183,23 @@ bool handle_connect_request(int fd, Node **ssl_contexts, fd_set *active_read_fd_
         const char *connect_response = "HTTP/1.1 200 Connection established\r\n\r\n";
         
         // Using send instead of write to be robust to client disconnection
-        // write(fd, connect_response, strlen(connect_response));
         send(fd, connect_response, strlen(connect_response), MSG_NOSIGNAL);
 
         // Step 4: Perform SSL handshake with the client after the CONNECT response
         if (SSL_accept(client_ssl) <= 0) {
-            // printf("\nSSL handshake failed to client\n");
-            // ERR_print_errors_fp(stderr);
+            printf("\nSSL handshake failed to client\n");
+            ERR_print_errors_fp(stderr);
             SSL_shutdown(client_ssl);
             SSL_free(client_ssl);
             close(fd);
             return false;
         }
-        // printf("\nSSL handshake with client successful\n");
 
         // Step 5: Open new connection with the server the client requested
         int port = atoi(strtok(NULL, " "));
         open_new_conn_to_server(hostname, port, &new_context);
         assert(new_context != NULL);
 
-        // NOTE: KNOWN BUG: Sometimes the server cannot be correctly connected
-        // to. This creates an issue with the "ERROR, no such host" message
-        // appearing many many times
-
-        //assert(new_context->server_ssl != NULL) // will reveal the issue
         append(ssl_contexts, new_context);
 
         FD_SET(new_context->server_fd, active_read_fd_set);
@@ -287,19 +257,11 @@ bool handle_fact_check_request(char *buffer, incomplete_message *curr_message,
                                 "%s";
 
     char fact_check_response_buffer[20000];
-    // int static_part_length = strlen("{\"factCheck\": }"); // Length of the fixed JSON structure
-    // int content_length = static_part_length + num_bytes_from_LLM;
-    // snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, content_length, LLM_buffer);
     snprintf(fact_check_response_buffer, sizeof(fact_check_response_buffer), fact_check_response, num_bytes_from_LLM, LLM_buffer);
 
-    // printf("Fact Check Response:\n%s\n", fact_check_response_buffer);
-    printf("Writing Fact check response to client...");
     int write_n = SSL_write(curr_context->client_ssl, fact_check_response_buffer, strlen(fact_check_response_buffer));
-    printf("COMPLETE\n");
 
-    // printf("Wrote fact check response to client\n");
     if (write_n <= 0) {
-        // printf("\n1\n");
         free(curr_message->header);
         removeNode(all_messages, curr_message);
         return false;
@@ -322,13 +284,11 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
             curr_message->original_header_length);
 
         if (write_n <= 0) {
-        // printf("\n2\n");
             free(curr_message->header);
             removeNode(all_messages, curr_message);
             return false;
         }
 
-        // printf("Wrote header to server: %s\n", curr_message->header);
         char *end_of_header = strstr(buffer, "\r\n\r\n");
         int curr_part_of_header_length = end_of_header - buffer + 4;
 
@@ -338,59 +298,23 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         read_n -= curr_part_of_header_length;
 
         if (!request_might_have_data(curr_message->header)) {
-        // printf("\n3\n");
-
             free(curr_message->header);
             removeNode(all_messages, curr_message);
         }
     }
 
-    // NOTE: potential bug: we're concerned that for HTTP requests which contain
-    // only a header and no body, that after we read in the header and see that
-    // there is no body to be read, we will have an open socket that will never
-    // have data sent to it again, that will just remain open.
-
     // sending body
     if (read_n > 0 && curr_message->header_sent) {
         if (curr_message->original_content_type != NORMAL_ENCODING) {
-
-            // if (strstr(buffer, "HTTP") != NULL) {
-            //     if (curr_message->original_content_type == CHUNKED_ENCODING) {
-            //         printf("\norignal content type: CHUNKED\n");
-            //     }
-            //     else if (curr_message->original_content_type == OTHER_ENCODING) {
-            //         printf("\norignal content type: OTHER\n");
-            //     }
-            //     printf("\nBUFFER FROM CLIENT NOT NORMAL:\n");
-            //     for (int i = 0; i < read_n; i++) {
-            //         if (buffer[i] == '\r') {
-            //             printf("\\R");
-            //         } else if (buffer[i] == '\n') {
-            //             printf("\\N\n");
-            //         } else {
-            //             putchar(buffer[i]);
-            //         }
-            //     }
-
-            //     printf("\nHEADER FROM CLIENT:\n%s\n", curr_message->header);
-
-            //     printf("content length: %d\n", curr_message->content_length);
-            //     printf("content length read: %d\n", curr_message->content_length_read);
-            //     printf("getting content length now: %d\n", get_content_length(curr_message->header));
-            // }
-
             write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
             if (write_n <= 0) {
-        // printf("\n4\n");
-
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
                 return false;
             }
 
             if (contains_chunk_end(buffer, read_n)) {
-        // printf("\n5\n");
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
             }
@@ -399,44 +323,13 @@ bool handle_general_client_request(incomplete_message *curr_message, int read_n,
         else {
             write_n = SSL_write(curr_context->server_ssl, buffer, read_n);
 
-            // if (strstr(buffer, "HTTP") != NULL) {
-            //     if (curr_message->original_content_type == CHUNKED_ENCODING) {
-            //         printf("\norignal content type: CHUNKED\n");
-            //     }
-            //     else if (curr_message->original_content_type == OTHER_ENCODING) {
-            //         printf("\norignal content type: OTHER\n");
-            //     }
-            //     else {
-            //         printf("\norignal content type: NORMAL\n");
-            //     }
-            //     printf("\n\n\nBUFFER FROM CLIENT NORMAL:\n");
-            //     for (int i = 0; i < read_n; i++) {
-            //         if (buffer[i] == '\r') {
-            //             printf("\\R");
-            //         } else if (buffer[i] == '\n') {
-            //             printf("\\N\n");
-            //         } else {
-            //             putchar(buffer[i]);
-            //         }
-            //     }
-
-            //     printf("\nHEADER FROM CLIENT:\n%s\n", curr_message->header);
-
-            //     printf("content length: %d\n", curr_message->content_length);
-            //     printf("content length read: %d\n", curr_message->content_length_read);
-            //     printf("getting content length now: %d\n", get_content_length(curr_message->header));
-            // }
-
             if (write_n <= 0) {
-        // printf("\n6\n");
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
                 return false;
             }
 
             if (curr_message->content_length_read >= curr_message->content_length) {
-        // printf("\n7\n");
-
                 free(curr_message->header);
                 removeNode(all_messages, curr_message);
             }
@@ -541,23 +434,15 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
     else { //if (read_n > 0)
         if (is_quora(curr_context->hostname)) {
-            // printf("QUORA SERVER\n");
-            // printf("Getting ready to search quora\n");
             incomplete_message *curr_message = get_incomplete_message_by_filedes(*all_messages, curr_context->server_fd);
             if (curr_message == NULL || !(curr_message->header_complete)) {
-                if (curr_message == NULL) {
-                    // printf("Curr messange is NULL\n");
-                }
                 curr_message = modify_header_data(&curr_message, buffer, curr_context->server_fd, all_messages);
             }
 
-            // NOTE: known bug: there is a strange issue where quora is sending more
-            // data than we expect after we finish reading in the header
             curr_message->content_length_read += read_n;
             
             // If the response header hasn't been sent to the client yet, send it
             if (!(curr_message->header_sent) && curr_message->header_complete) {
-                //maybe we put this in the struct when we clean up
                 int changed_header_len = strlen(curr_message->header);
                 write_n = SSL_write(curr_context->client_ssl, curr_message->header, changed_header_len);
 
@@ -567,15 +452,12 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                         return true; // Keep the connection open
                     } else {
-                                // printf("\n8\n");
-
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
                     }
                 }
 
-                // NOTE: this is a tricky part
                 char *end_of_header = strstr(buffer, "\r\n\r\n");
                 int curr_part_of_header_length = end_of_header - buffer + 4;
 
@@ -590,53 +472,19 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                 // Normal encoding (with content length)
                 if (curr_message->original_content_type == NORMAL_ENCODING) {
-                //     if (strstr(buffer, "HTTP") != NULL) {
-                //         if (curr_message->original_content_type == CHUNKED_ENCODING) {
-                //     printf("\norignal content type: CHUNKED\n");
-                // }
-                // else if (curr_message->original_content_type == OTHER_ENCODING) {
-                //     printf("\norignal content type: OTHER\n");
-                // }
-                // else {
-                //     printf("\norignal content type: NORMAL\n");
-                // }
-                //         printf("\n\n\nBUFFER FROM SERVER NORMAL:\n");
-                //         for (int i = 0; i < read_n; i++) {
-                //             if (buffer[i] == '\r') {
-                //                 printf("\\R");
-                //             } else if (buffer[i] == '\n') {
-                //                 printf("\\N\n");
-                //             } else {
-                //                 putchar(buffer[i]);
-                //             }
-                //         }
-
-                //         printf("\nHEADER FROM SERVER:\n%s\n", curr_message->header);
-
-                //         printf("content length: %d\n", curr_message->content_length);
-                //         printf("content length read: %d\n", curr_message->content_length_read);
-                //         printf("getting content length now: %d\n", get_content_length(curr_message->header));
-                //     }
-                    
                     int chunk_data_length = 0;
                     char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
 
                     if (chunked_data == NULL) {
-                                // printf("\n9\n");
-
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
                     }
 
-                    // // Injection
+                    // Injection
                     int to_send_length = chunk_data_length;
                     char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
-
-                    // // printf("Injection with chunked encoding...");
-
                     write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-                    // printf("COMPLETE\n");
                     
                     // No injection
                     // write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
@@ -649,8 +497,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                             return true; // Keep the connection open
                         } else {
-                                // printf("\n10\n");
-
                             free(curr_message->header);
                             removeNode(all_messages, curr_message);
                             return false;
@@ -658,62 +504,20 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     }
 
                     if (curr_message->content_length_read >= curr_message->content_length) {
-                        // printf("\nremove node 4\n");
-                                // printf("\n11\n");
-                        
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                     }
                 }
                 else {
-                    // NOTE: known bug here in this function when curling quora.
-                    // things don't work the way I expect
                     int new_buffer_length = 0;
-                    // char *new_buffer = "hi";
-
-
                     char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
-
-                //     if (strstr(buffer, "HTTP") != NULL) {
-                //         if (curr_message->original_content_type == CHUNKED_ENCODING) {
-                //     printf("\n\n\norignal content type: CHUNKED\n");
-                // }
-                // else if (curr_message->original_content_type == OTHER_ENCODING) {
-                //     printf("\n\n\norignal content type: OTHER\n");
-                // }
-                // else {
-                //     printf("\n\n\norignal content type: NORMAL\n");
-                // }
-                //         printf("BUFFER FROM SERVER CHUNKED:\n");
-                //         for (int i = 0; i < read_n; i++) {
-                //             if (buffer[i] == '\r') {
-                //                 printf("\\R");
-                //             } else if (buffer[i] == '\n') {
-                //                 printf("\\N\n");
-                //             } else {
-                //                 putchar(buffer[i]);
-                //             }
-                //         }
-                //         printf("content length: %d\n", curr_message->content_length);
-                //         printf("content length read: %d\n", curr_message->content_length_read);
-                //         printf("getting content length now: %d\n", get_content_length(curr_message->header));
-
-                //         printf("\nHEADER FROM SERVER:\n%s\n", curr_message->header);
-                //     }
-                    
-                    // no injection
-                    // write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
-
-                    // printf("Before Injection\n%s\n", new_buffer);
 
                     // injection
                     int to_send_length = new_buffer_length;
                     char *to_send = inject_script_into_chunked_html(new_buffer, &to_send_length);
-
                     write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
 
                     if (write_n <= 0) {
-                        // if we just get rid of this data, won't that data just be lost?
                         int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
                         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
                             free(new_buffer);
@@ -721,9 +525,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                             return true; // Keep the connection open
                         } else {
-                                // printf("\n12\n");
-
-
                             free(curr_message->header);
                             removeNode(all_messages, curr_message);
                             
@@ -736,8 +537,6 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
                     // Injection
                     if (contains_chunk_end(new_buffer, new_buffer_length)) {
-                                // printf("\n13\n");
-
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
@@ -754,7 +553,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                     // }
 
 
-                    // free(new_buffer);
+                    free(new_buffer);
                     new_buffer = NULL;
                 }
             }

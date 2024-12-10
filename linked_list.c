@@ -1,7 +1,6 @@
 #include "linked_list.h"
 #include <stdio.h>
 #include <stdlib.h>
-// #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <assert.h>
 
@@ -87,16 +86,6 @@ Context_T *get_ssl_context_by_server_fd(Node *head, int server_fd) {
     }
     return NULL;
 }
-
-// message *get_message_by_filedes(Node *head, int filedes) {
-//     for (Node *curr = head; curr != NULL; curr = curr->next) {
-//         message *curr_message = curr->data;
-//         if (curr_message->filedes == filedes) {
-//             return curr_message;
-//         }
-//     }
-//     return NULL;
-// }
 
 incomplete_message *get_incomplete_message_by_filedes(Node *head, int filedes) {
     for (Node *curr = head; curr != NULL; curr = curr->next) {

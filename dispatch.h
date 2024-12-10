@@ -9,18 +9,6 @@
 #define SERVER_FD 1
 #define NO_FD_ASSOCIATION 2
 
-// Parser states
-// enum {
-//     CHUNK_SIZE,
-//     CHUNK_SIZE_LF,
-//     CHUNK_DATA,
-//     CHUNK_DATA_CR,
-//     CHUNK_DATA_LF,
-//     CHUNK_DONE
-// };
-
-void set_socket_timeout(int fd, long timeout_milliseconds);
-
 bool read_client_request(int client_fd, Node **ssl_contexts, 
     fd_set *active_read_fd_set, int *max_fd, Node **all_messages, 
     int LLM_sockfd, struct sockaddr_un python_addr);

@@ -9,7 +9,10 @@
         "tuple": "c",
         "string.h": "c",
         "unistd.h": "c",
-        "ctype.h": "c"
+        "ctype.h": "c",
+        "zlib.h": "c",
+        "assert.h": "c",
+        "types.h": "c"
     },
     "makefile.configureOnOpen": false
 }
