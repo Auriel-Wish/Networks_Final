@@ -515,7 +515,9 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
 
     char buffer_arr[BUFFER_SIZE + 1];
     char *buffer = buffer_arr;
+    printf("Reading...");
     int read_n = SSL_read(curr_context->server_ssl, buffer, BUFFER_SIZE);
+    printf("DONE reading\n");
     buffer_arr[read_n] = '\0';
 
     int write_n;
@@ -594,37 +596,29 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 read_n -= curr_part_of_header_length;
             }
 
-            // If there are more bytes to be sent in the response
-
-            // TODO: need to figure out: Does a response body only send even work? 
-
+            // If the header has been sent, but there are more bytes to send
             if (read_n > 0 && curr_message->header_sent) {
-
+                
                 // Normal encoding (with content length)
                 if (curr_message->original_content_type == NORMAL_ENCODING) {
+                    // TODO: This case is very undertested
                     int chunk_data_length = 0;
                     char *chunked_data = convert_normal_to_chunked_encoding(buffer, read_n, curr_message, &chunk_data_length);
 
                     if (chunked_data == NULL) {
-                        // printf("\nremove node 2\n");
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
                     }
 
-                    // // Injection
-                    int to_send_length = chunk_data_length;
-                    char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
-
-                    // // printf("Injection with chunked encoding...");
-
-                    write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
-                    printf("Normal Encoding write\n");
-
-                    // printf("COMPLETE\n");
+                    // Injection
+                    // printf("Injection with chunked encoding...");
+                    // int to_send_length = chunk_data_length;
+                    // char *to_send = inject_script_into_chunked_html(chunked_data, &to_send_length);
+                    // write_n = SSL_write(curr_context->client_ssl, to_send, to_send_length);
                     
                     // No injection
-                    // write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
+                    write_n = SSL_write(curr_context->client_ssl, chunked_data, chunk_data_length);
 
                     free(chunked_data);
                     chunked_data = NULL;
@@ -641,6 +635,7 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                         }
                     }
 
+                    // NOTE: Need to change
                     // Test: always removing the header
                     free(curr_message->header);
                     removeNode(all_messages, curr_message);
@@ -653,37 +648,22 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                 }
 
                 else if (curr_message->original_content_type == CHUNKED_ENCODING) {
-                    // NOTE: known bug here in this function when curling quora.
-                    // things don't work the way I expect
-                    
-                    // Data is already chunked
-                    // int new_buffer_length = 0;
-                    // char *new_buffer = "hi";
-
                     // There are known issues with this function
                     // char *new_buffer = process_chunked_data(curr_message, buffer, read_n, &new_buffer_length);
 
-                    // NOTE: currently skipping injection
+                    // No injection
                     write_n = SSL_write(curr_context->client_ssl, buffer, read_n);
 
-                    // printf("Chunked Encoding write\n");
-
                     if (write_n <= 0) {
-                        // if we just get rid of this data, won't that data just be lost?
                         int ssl_error = SSL_get_error(curr_context->client_ssl, write_n);
                         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
-                            
-                            printf("Being very wary of this right now\n");
+                            printf("Being wary of this case\n");
                             assert(false);
-
                             return true; // Keep the connection open
                         } else {
-                            // printf("\nremove node 5\n");
-
                             free(curr_message->header);
                             removeNode(all_messages, curr_message);
-
-                            return false;
+                            return false; // Closing the connection
                         }
                     }
 
@@ -695,13 +675,11 @@ bool read_server_response(int server_fd, Node **ssl_contexts, Node **all_message
                         free(curr_message->header);
                         removeNode(all_messages, curr_message);
                         return false;
-
                     }
 
-
-                    // I believe this is a mistake
-                    // free(curr_message->header);
-                    // removeNode(all_messages, curr_message);
+                    // Haven't reached the end of the chunk yet, there are more
+                    // bytes to read
+                    return true; 
                 }
 
                 else if (curr_message->original_content_type == OTHER_ENCODING) {
