@@ -370,7 +370,7 @@ void modify_accept_encoding(incomplete_message *msg) {
 }
 
 char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
-    char *quora_last_line = "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})})},100)})";
+    // char *quora_last_line = "addEventListener(\"load\",function(){setTimeout(function(){window.navigator.serviceWorker.register(\"/sw.js\").then(function(t){t.update().catch(function(){})})},100)})";
     const char *body_tag = "</body>";
 
     // printf("BUFFER:\n");

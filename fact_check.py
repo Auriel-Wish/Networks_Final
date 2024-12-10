@@ -197,7 +197,7 @@ def main():
             # json_output = json.dumps(json_payload, ensure_ascii=False)
             print(f"Sending to proxy:\n{to_send}")
             # data_to_send = json_output.encode('utf-8')
-            n = sock.sendto(to_send.encode(), addr)
+            n = sock.sendto(to_send.encode('utf-8'), addr)
 
     finally:
         sock.close()
