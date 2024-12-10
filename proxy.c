@@ -146,7 +146,7 @@ int main(int argc, char **argv)
 }
 
 void client_disconnect(int filedes, Node **ssl_contexts, fd_set *active_read_fd_set) {
-
+    // NOTE: Any time a client gets disconnected, messages that were associated with it must be freed
     // printf("Trying to disconnect a client...");
     FD_CLR(filedes, active_read_fd_set);
     Context_T *curr_context = get_ssl_context_by_client_fd(*ssl_contexts, filedes);

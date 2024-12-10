@@ -112,11 +112,23 @@ char *convert_normal_to_chunked_encoding(char *buffer, int buffer_length, incomp
 }
 
 bool contains_chunk_end(char *buffer, int buffer_length) {
+    // Print the last 4 characters in the buffer
+    // if (buffer_length >= 4) {
+    //     printf("Last 4 characters: %c%c%c%c\n", 
+    //            buffer[buffer_length - 4], 
+    //            buffer[buffer_length - 3], 
+    //            buffer[buffer_length - 2], 
+    //            buffer[buffer_length - 1]);
+    // } else {
+    //     printf("Buffer is too small to have 4 characters.\n");
+    // }
+
     for (int i = 0; i < buffer_length - 4; i++) {
         if (buffer[i] == '0' && buffer[i + 1] == '\r' && buffer[i + 2] == '\n' && buffer[i + 3] == '\r' && buffer[i + 4] == '\n') {
             return true;
         }
     }
+
     return false;
 }
 
@@ -134,6 +146,7 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
         curr_message->header_sent = false;
         curr_message->original_content_type = OTHER_ENCODING;
         curr_message->rn_state = END_OF_CHUNK;
+        curr_message->source = OTHER_MSG;
         curr_message->read_ended_with_slash_r = false;
         append(all_messages, curr_message);
     }
@@ -184,11 +197,17 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
             strcat(curr_message->header, only_header);
         }
 
+
+        // Request coming from client
         if (is_request(curr_message->header)) {
             modify_accept_encoding(curr_message);
+            curr_message->source = CLIENT_MSG;
         }
+
+        // Response coming from server
         else {
             modify_content_type(curr_message);
+            curr_message->source = SERVER_MSG;
         }
 
         // printf("Header is currently:\n%s\n\n", curr_message->header);
@@ -643,6 +662,27 @@ void print_buffer(unsigned char *m, unsigned size)
     }
 }
 
+void print_buffer_s(char *m, unsigned size)
+{
+    // printf("Type: %d, Source: %s, Dest: %s, Length: %d, ID: %d\n",
+    //        m->h.type, m->h.source, m->h.dest, m->h.length, m->h.message_id);
+    // printf("\nSize of buffer: %d\n", size);
+    if (size > 0) {
+        printf("Message content is: ");
+        for (unsigned offset = 0; offset < size; offset++) {
+            if (m[offset] == '\0') {
+                putchar('.');
+            }
+
+            else {
+                putchar(m[offset]);
+            }
+        }
+
+        printf("\n");
+    }
+}
+
 bool is_request(char *buffer) {
     if (buffer == NULL) {
         return false;
@@ -686,18 +726,6 @@ bool request_might_have_data(const char *method) {
     return false;
 }
 
-// char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
-//     char chunk_header[20];
-//     sprintf(chunk_header, "%X\r\n", *data_length);
-//     char *chunked_data = malloc(strlen(chunk_header) + *data_length + 3); // +3 for \r\n and null terminator
-//     strcpy(chunked_data, chunk_header);
-//     memcpy(chunked_data + strlen(chunk_header), buffer_only_data, *data_length);
-//     strcat(chunked_data, "\r\n");
-//     *data_length = *data_length + strlen(chunk_header) + 2;
-//     free(buffer_only_data);
-
-//     return chunked_data;
-// }
 char *make_chunk_header_and_end(char *buffer_only_data, int *data_length) {
     char chunk_header[20];
     snprintf(chunk_header, 20, "%X\r\n", *data_length);
@@ -770,30 +798,30 @@ char *find_next_rn(char *buffer, int buffer_size) {
 
 char* process_chunked_data(incomplete_message *msg, char *buffer, int buffer_size, int *output_buffer_size) {
     
-    printf("\n\n\nPROCESSING CHUNKED\n");
-    printf("Message header:\n%s\n", msg->header);
-    if (msg->header_complete) {
-        printf("Header complete\n");
-    } else {
-        printf("Header not complete\n");
-    }
-    if (msg->rn_state == END_OF_CHUNK) {
-        printf("END OF CHUNK\n");
-    } else if (msg->rn_state == END_OF_HEADER) {
-        printf("END OF HEADER\n");
-    }
-    printf("Actual buffer:\n");
-    for (int i = 0; i < buffer_size; i++) {
-        if (buffer[i] == '\r') {
-            printf("\nR\n");
-        } else if (buffer[i] == '\n') {
-            printf("\nN\n");
-        } else if (!isalnum(buffer[i]) && !isspace(buffer[i]) && buffer[i] != '<' && buffer[i] != '>') {
-            printf(".");
-        } else {
-            printf("%c", buffer[i]);
-        }
-    }
+    // printf("\n\n\nPROCESSING CHUNKED\n");
+    // printf("Message header:\n%s\n", msg->header);
+    // if (msg->header_complete) {
+    //     printf("Header complete\n");
+    // } else {
+    //     printf("Header not complete\n");
+    // }
+    // if (msg->rn_state == END_OF_CHUNK) {
+    //     printf("END OF CHUNK\n");
+    // } else if (msg->rn_state == END_OF_HEADER) {
+    //     printf("END OF HEADER\n");
+    // }
+    // printf("Actual buffer:\n");
+    // for (int i = 0; i < buffer_size; i++) {
+    //     if (buffer[i] == '\r') {
+    //         printf("\nR\n");
+    //     } else if (buffer[i] == '\n') {
+    //         printf("\nN\n");
+    //     } else if (!isalnum(buffer[i]) && !isspace(buffer[i]) && buffer[i] != '<' && buffer[i] != '>') {
+    //         printf(".");
+    //     } else {
+    //         printf("%c", buffer[i]);
+    //     }
+    // }
 
     if (msg->read_ended_with_slash_r) {
         printf("\nread ended with slash r\n");

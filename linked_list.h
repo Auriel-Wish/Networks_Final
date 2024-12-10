@@ -34,6 +34,11 @@ typedef struct {
         END_OF_HEADER,
         END_OF_CHUNK
     } rn_state;
+    enum {
+        CLIENT_MSG,
+        SERVER_MSG,
+        OTHER_MSG
+    } source;
     char *header;
     int original_header_length;
     bool header_sent;
