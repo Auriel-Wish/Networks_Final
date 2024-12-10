@@ -55,7 +55,7 @@ def make_LLM_request(request, url):
         if response.status_code == 200:
             print("RESPONSE:")
             print(response.text)
-            return response.text
+            return (response.text[1:-2]).replace('\n', "<br>")
         else:
             print(f"Error: Received response code {response.status_code}")
     except requests.exceptions.RequestException as e:
@@ -172,9 +172,10 @@ def main():
                 n = sock.sendto("An error occurred while fact checking.".encode(), addr)
                 continue
             to_fact_check = data['text']
-            json_payload = {
-                "factCheck": "UNKNOWN ERROR"
-            }
+            # json_payload = {
+            #     "factCheck": "UNKNOWN ERROR"
+            # }
+            to_send = None
 
             extra_text = to_fact_check[:100]
             if len(to_fact_check) > 100:
@@ -187,16 +188,16 @@ def main():
                 formatted_response = html.unescape(formatted_response)
 
                 if formatted_response:
-                    json_payload['factCheck'] = formatted_response
+                    to_send = formatted_response
                 else:
-                    json_payload['factCheck'] = f"{extra_text}An error occurred while fact checking."
+                    to_send = f"{extra_text}An error occurred while fact checking."
             else:
-                json_payload['factCheck'] = f"{extra_text}Statement does not make sense to fact check"
+                to_send = f"{extra_text}Statement does not make sense to fact check"
             
-            json_output = json.dumps(json_payload, ensure_ascii=False)
-            print(f"Sending to proxy:\n{json_output}")
-            data_to_send = json_output.encode('utf-8')
-            n = sock.sendto(data_to_send, addr)
+            # json_output = json.dumps(json_payload, ensure_ascii=False)
+            print(f"Sending to proxy:\n{to_send}")
+            # data_to_send = json_output.encode('utf-8')
+            n = sock.sendto(to_send.encode(), addr)
 
     finally:
         sock.close()

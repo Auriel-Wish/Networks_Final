@@ -140,18 +140,18 @@ incomplete_message *modify_header_data(incomplete_message **msg, char *buffer, i
         append(all_messages, curr_message);
     }
 
-    int buffer_length = strlen(buffer);
-    if (buffer_length < 4) {
-        printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
-    }
-    else {
-        if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
-            printf("\nFOUND NEWLINE\n");
-        }
-        if (buffer[buffer_length - 1] == '\r') {
-            printf("\nFOUND CARRIAGE RETURN\n");
-        }
-    }
+    // int buffer_length = strlen(buffer);
+    // if (buffer_length < 4) {
+    //     printf("\nBUFFER TOO SHORT: %d\n", buffer_length);
+    // }
+    // else {
+    //     if (buffer[buffer_length - 1] == '\n' && buffer[buffer_length - 2] != '\r') {
+    //         printf("\nFOUND NEWLINE\n");
+    //     }
+    //     if (buffer[buffer_length - 1] == '\r') {
+    //         printf("\nFOUND CARRIAGE RETURN\n");
+    //     }
+    // }
     // printf("\nBUFFER:\n%s\n", buffer);
 
     char *header_end = strstr(buffer, "\r\n\r\n");
@@ -235,6 +235,8 @@ int get_content_type(char *header) {
 
 bool is_quora(char *hostname) {
     return (strcmp(hostname, "www.quora.com") == 0);
+    // return (strcmp(hostname, "www.quora.com") == 0) || (strcmp(hostname, "www.reddit.com") == 0 || (strcmp(hostname, "reddit.com") == 0));
+    // return (strcmp(hostname, "www.quora.com") == 0) || (strcmp(hostname, "wikipedia.org") == 0 || (strcmp(hostname, "en.wikipedia.org") == 0));
 }
 
 int get_content_length(char *header) {
@@ -374,12 +376,15 @@ char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
     // printf("BUFFER:\n");
     // printf("%s\n", buffer);
 
-    if (strstr(buffer, quora_last_line) == NULL || strstr(buffer, body_tag) == NULL) {
-        // printf("Didn't find a place to inject\n");
+    // if (strstr(buffer, quora_last_line) == NULL || strstr(buffer, body_tag) == NULL) {
+    //     // printf("Didn't find a place to inject\n");
+    //     return buffer;
+    // }
+    if (strstr(buffer, body_tag) == NULL) {
         return buffer;
     }
 
-    printf("Attempting to inject script into chunked HTML\n");
+    // printf("Attempting to inject script into chunked HTML\n");
 
 
     const char *script_to_inject = 
@@ -476,15 +481,16 @@ char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
             "      resultsContainer.prepend(loadingMessage);"
             ""
             "      try {"
+            // "        const response = await fetch('https://www.wikipedia.org?fact-check-CS112-Final=True', {"
             "        const response = await fetch('https://www.quora.com/ajax/receive_POST?fact-check-CS112-Final=True', {"
             "          method: 'POST',"
             "          headers: { 'Content-Type': 'application/json' },"
             "          body: JSON.stringify({ text: selection })"
             "        });"
-            "        const result = await response.json();"
+            "        const result = await response.text();"
             "        const factCheckResult = document.createElement('div');"
-            "        if (is_first) {factCheckResult.innerHTML = `<p>${result.factCheck}</p>`; is_first = false}"
-            "        else {factCheckResult.innerHTML = `<p>${result.factCheck}</p><hr style=\"margin: 30px auto; text-align: center; border: 1px black solid; width: 80%\">`;}"
+            "        if (is_first) {factCheckResult.innerHTML = `<p>${result}</p>`; is_first = false}"
+            "        else {factCheckResult.innerHTML = `<p>${result}</p><hr style=\"margin: 30px auto; text-align: center; border: 1px black solid; width: 80%\">`;}"
             "        resultsContainer.prepend(factCheckResult);"
             "        loadingMessage.remove();"
             "      } catch (error) {"
@@ -614,7 +620,7 @@ char *inject_script_into_chunked_html(char *buffer, int *buffer_length) {
             // Update buffer_length
             *buffer_length = new_buffer_length;
 
-            printf("Script injected\n");
+            // printf("Script injected\n");
             // Return new buffer
             return new_buffer;
         }
