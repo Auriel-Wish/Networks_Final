@@ -88,10 +88,12 @@ While the current implementation is Quora-specific, the design can be adapted to
 ---
 
 ## How to Use
-1. Clone the repository and set up the proxy environment.
-2. Add the generated certificate authority to your system’s trusted certificates.
-3. Start the proxy and use a compatible browser or tool (e.g., Firefox, `curl`) to access Quora.
-4. Highlight text and click the fact-check button to initiate fact-checking.
+1. Clone the repository
+2. pip install requirements.txt
+3. Add the generated certificate authority to your system’s trusted certificates. These must be named Networks_Final_Project.crt and Networks_Final_Project.key
+4. chmod +x run.sh
+5. ./run.sh
+6. Highlight text on Quora and click the fact-check button.
 
 ## Authors
 Developed by Auriel Wish and Liam Drew
